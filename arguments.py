@@ -28,7 +28,9 @@ def parse():
             '--calibrate',
             default = -1,
             type = int,
-            metavar='ROI')
+            metavar='ROI',
+            help=('All data in the gven ROI will be used to make' +
+                  ' a gain calibration.'))
 
     parser.add_argument(
             '--calibBeta',

@@ -1,8 +1,9 @@
 import sys
 import os.path
-sys.path.append( os.path.dirname(os.path.abspath(__file__)) +  '/aolPyModules')
+sys.path.append(
+                os.path.dirname(os.path.abspath(__file__)) +
+                '/aolPyModules')
 from mpi4py import MPI
-import psana
 import arguments
 #import matplotlib.pyplot as plt
 #plt.ion()
@@ -11,9 +12,11 @@ import time
 import platform
 from collections import deque
 import importlib
-import cookieBox
 import lmfit
+
 import aolUtil
+import simplepsana
+import cookie_box
 import lclsData
 
 # Set up the mpi cpmmunication
@@ -72,7 +75,7 @@ def connectToDataSource(args, config, verbose=False):
                 host,
                 dataSource)
 
-    return psana.DataSource(dataSource)
+    return simplepsana.get_data_source(dataSource)
 
 
 def importConfiguration(args, verbose=False):
@@ -96,7 +99,7 @@ def getDetectorCalibration(verbose=False, fileName=''):
         # Get the latest detector callibration values from file
         if not os.path.exists(detCalib.path):
             os.makedirs(detCalib.path)
-            np.savetxt(detClib.path + '/' + detCalib.name + '0.txt', [1]*16)
+            np.savetxt(detCalib.path + '/' + detCalib.name + '0.txt', [1]*16)
         
         detCalib.fileNumber = np.max([int(f[len(detCalib.name):-4]) for f in
             os.listdir(detCalib.path) if len(f) > len(detCalib.name) and
@@ -129,12 +132,12 @@ def saveDetectorCalibration(masterLoop, detCalib, config, verbose=False, beta=0)
     calibValues = np.concatenate(masterLoop.calibValues, axis=0)
     average = calibValues.mean(axis=0)
     #factors = average[config.boolFitMask].max()/average
-    params = cookieBox.initialParams()
+    params = cookie_box.initial_params()
     params['A'].value = 1
     params['beta'].value = beta
     params['tilt'].value = 0
     params['linear'].value = 1
-    factors = cookieBox.modelFunction(params, np.radians(np.arange(0, 360,
+    factors = cookie_box.model_function(params, np.radians(np.arange(0, 360,
         22.5))) * float(average.max()) / average
     factors[~config.boolFitMask] = np.nan
     
@@ -193,20 +196,23 @@ def masterLoopSetup(args):
 def getScales(cb, config):
     scales = aolUtil.struct()
     # Grab the relevant scales
-    scales.energy_eV = cb.getEnergyScales_eV()[0]
-    scales.eRoi0S = cookieBox.sliceFromRange([scales.energy_eV],
-            config.energyRoi0_eV_common)
+    scales.energy_eV = cb.get_energy_scales_eV()[0]
+    scales.eRoi0S = cookie_box.slice_from_range([scales.energy_eV],
+            config.energy_roi_0_eV_common)
     scales.energyRoi0_eV = scales.energy_eV[scales.eRoi0S]
     
-    scales.time_us = cb.getTimeScales_us()
-    scales.tRoi0S = cookieBox.sliceFromRange(scales.time_us,
-            config.timeRoi0_us_common)
-    scales.tRoi0BgS = cookieBox.sliceFromRange(scales.time_us,
-                        config.timeRoi0Bg_us_common)
-    scales.tRoi0BgFactors = np.array([np.float(s.stop-s.start)/(bg.stop-bg.start) for
-        s,bg in zip(scales.tRoi0S, scales.tRoi0BgS)])
-    scales.tRoi1S = cookieBox.sliceFromRange(scales.time_us,
-            config.timeRoi1_us_common)
+    scales.time_us = cb.get_time_scales_us()
+    scales.tRoi0S = cookie_box.slice_from_range(scales.time_us,
+            config.time_roi_0_us_common)
+    scales.tRoi0BgS = cookie_box.slice_from_range(scales.time_us,
+                        config.time_roi_0_bg_us_common)
+    print 'scales.tRoi0S =', scales.tRoi0S
+    print 'scales.tRoi0BgS', scales.tRoi0BgS
+    scales.tRoi0BgFactors = np.array(
+            [np.float(s.stop-s.start)/(bg.stop-bg.start) for
+             s,bg in zip(scales.tRoi0S, scales.tRoi0BgS)])
+    scales.tRoi1S = cookie_box.slice_from_range(scales.time_us,
+            config.time_roi_1_us_common)
     scales.timeRoi0_us = [t[s] for t,s in zip(scales.time_us, scales.tRoi0S)]
     scales.timeRoiBg0_us = [t[s] for t,s in zip(scales.time_us,
         scales.tRoi0BgS)]
@@ -255,23 +261,23 @@ def appendEventData(evt, evtData, cb, lcls, config, scales, detCalib):
     # Get the intensities
     evtData.intRoi0.append(
         (
-            cb.getIntensityDistribution(domain='Time',
-                roiSlices = scales.tRoi0S,
+            cb.get_intensity_distribution(domain='Time',
+                rois = scales.tRoi0S,
                 detFactors = detCalib.factors)
-            - cb.getIntensityDistribution(domain='Time',
-                roiSlices = scales.tRoi0BgS,
+            - cb.get_intensity_distribution(domain='Time',
+                rois = scales.tRoi0BgS,
                 detFactors = detCalib.factors) * scales.tRoi0BgFactors
             ) * config.nanFitMask)
 
     #evtData.intRoi0Bg
     
-    evtData.intRoi1.append(cb.getIntensityDistribution(domain='Time',
-        roiSlices=scales.tRoi1S, detFactors=detCalib.factors) *
+    evtData.intRoi1.append(cb.get_intensity_distribution(domain='Time',
+        rois=scales.tRoi1S, detFactors=detCalib.factors) *
         config.nanFitMask)
         
     # Get the initial fit parameters
-    #params = cookieBox.initialParams(evtData.intRoi0[-1])
-    params = cookieBox.initialParams()
+    #params = cookie_box.initial_params(evtData.intRoi0[-1])
+    params = cookie_box.initial_params()
     params['A'].value, params['linear'].value, params['tilt'].value = \
             cb.proj.solve(evtData.intRoi0[-1], args.beta)
     # Lock the beta parameter. To the command line?
@@ -284,7 +290,7 @@ def appendEventData(evt, evtData, cb, lcls, config, scales, detCalib):
     #print scales.angles[config.boolFitMask]
     #print evtData.intRoi0[-1][config.boolFitMask]
     res = lmfit.minimize(
-            cookieBox.modelFunction,
+            cookie_box.model_function,
             params,
             args=(scales.angles[config.boolFitMask],
                 evtData.intRoi0[-1][config.boolFitMask]),
@@ -325,15 +331,23 @@ def appendEpicsData(epics, evtData):
  
 def masterEventData(evtData, cb, masterLoop, scales, verbose=False):
     # Grab the y data
-    evtData.energyAmplitude = np.average(cb.getEnergyAmplitudes(), axis=0)
-    evtData.energyAmplitudeRoi0 = \
+    try:
+        evtData.energyAmplitude = np.average(cb.get_energy_amplitudes(), axis=0)
+        evtData.energyAmplitudeRoi0 = \
             evtData.energyAmplitude[scales.eRoi0S]
-    evtData.timeAmplitude = cb.getTimeAmplitudes()
-    evtData.timeAmplitudeFiltered = cb.getTimeAmplitudesFiltered()
-    evtData.timeAmplitudeRoi0 = [t[s] for t, s in
+
+        evtData.timeAmplitude = cb.get_time_amplitudes()
+        evtData.timeAmplitudeFiltered = cb.get_time_amplitudes_filtered()
+        evtData.timeAmplitudeRoi0 = [t[s] for t, s in
             zip(evtData.timeAmplitudeFiltered, scales.tRoi0S)]
-    evtData.timeAmplitudeRoi1 = [t[s] for t, s in
+        evtData.timeAmplitudeRoi1 = [t[s] for t, s in
             zip(evtData.timeAmplitudeFiltered, scales.tRoi1S)]
+
+    except TypeError:
+        evtData.no_data = True
+        return
+
+    no_data = False
 
     if verbose:
         print 'Rank', rank, '(master) grabbed one event.'
@@ -611,7 +625,7 @@ def main(args, verbose=False):
         evt = events.next()
     
         # Make the cookie box object
-        cb = cookieBox.CookieBox(config, verbose=False)
+        cb = cookie_box.CookieBox(config, verbose=False)
         cb.proj.setFitMask(config.boolFitMask)
         if args.bgAverage != 1:
             cb.setBaselineSubtractionAveraging(args.bgAverage)
@@ -620,7 +634,7 @@ def main(args, verbose=False):
         lcls = lclsData.LCLSdata(config.lclsConfig, quiet=False)
     
         # Set up the scales
-        cb.setupScales(ds.env(), config.energyScaleBinLimits)
+        cb.setup_scales(config.energyScaleBinLimits, env=ds.env())
     
         # Get the scales that we need
         scales = getScales(cb, config)
@@ -652,7 +666,7 @@ def main(args, verbose=False):
                 evt = events.next()
     
                 # Pass the event to the processing
-                cb.setRawData(evt, newDataFactor=args.floatingAverage)
+                cb.set_raw_data(evt, newDataFactor=args.floatingAverage)
                 lcls.setEvent(evt)
     
                 # Randomize the amplitudes if this is requested 

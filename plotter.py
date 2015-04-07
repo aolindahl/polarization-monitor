@@ -7,7 +7,7 @@ import zmq
 import matplotlib.pyplot as plt
 import numpy as np
 import time
-import cookieBox
+import cookie_box
 import argparse
 
 
@@ -94,18 +94,18 @@ def mainPlotter(args, verbose=False):
 
                     
             # The fit in figure 2
-            params = cookieBox.initialParams()
+            params = cookie_box.initial_params()
             for k in params:
                 params[k].value = d[k]
             params['A'].value /= d['roi0'][ np.isfinite(d['roi0']) ].max()
             
-            lines[2].set_ydata(cookieBox.modelFunction(params, angle))
+            lines[2].set_ydata(cookie_box.model_function(params, angle))
             
             if args.beta != None:
                 params['beta'].value = args.beta
                 params['linear'].value = 1.0
                 params['tilt'].value = 0
-                y = cookieBox.modelFunction(params, angle)
+                y = cookie_box.model_function(params, angle)
                 lines[3].set_ydata(y/y.max())
             
             ax.relim()
@@ -149,7 +149,7 @@ def mainPlotter(args, verbose=False):
                 ax.relim()
                 ax.autoscale_view()
             else:
-                ax.set_ylim(-0.2, 1.2)
+                ax.set_ylim(-0.4, 1.4)
             #ax.plot(data[plotKey][0], data[plotKey][1][:,6], '.b')
             #ax.errorbar(data[plotKey][0], data[plotKey][1][:,6],
             #        data[plotKey][1][:,7], ls='None', color='b')
@@ -243,9 +243,13 @@ def mainPlotter(args, verbose=False):
             ax.set_ylabel('signal [V]')
         for ax in f1ax[-1,:]:
             ax.set_xlabel('time [us]')
-        for ax in f1ax.flatten():
-           ax.plot([],[], 'b', [],[], '--m', [],[], 'r', [],[], 'g')
+        for i, ax in enumerate(f1ax.flatten()):
+           ax.plot([],[], '--m', label='{} single'.format(22.5*i))
+           ax.plot([],[], 'b', label='average')
+           ax.plot([],[], 'r', label='ROI 0')
+           ax.plot([],[], 'g', label='ROI 1')
            ax.grid(True)
+           ax.legend(loc='upper right', prop={'size': 8})
 
         fig1.show()
 
@@ -271,9 +275,11 @@ def mainPlotter(args, verbose=False):
         fig3.add_subplot(211)
         fig3.axes[0].set_title('Degree of linear polarization')
         fig3.axes[0].set_ylim(-0.5, 1.5)
+        fig3.axes[0].grid(True)
         fig3.add_subplot(212)
         fig3.axes[1].set_title('Angle of residual linear polarization')
         fig3.axes[1].set_ylim(-2, 2)
+        fig3.axes[1].grid(True)
 
         #f3ax.plot([],[], [], '.', label='Degree of circular polarization')
 
@@ -322,7 +328,8 @@ if __name__ == '__main__':
             help = 'Print stuff ot the prompt.')
 
     parser.add_argument(
-            '-a', action='store_true')
+            '-a', action='store_true',
+            help='Autoscale strip chart y axis.')
 
     parser.add_argument(
             '-e', '--errors', action='store_true')

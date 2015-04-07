@@ -6,8 +6,8 @@ import aolUtil
 basicTofConfig = {
     "acqCh": 10, 
     "baselineSubtraction":"early", # 'early', 'roi', 'none' 
-    "baselineEnd_us": 0.05, 
-    "calibFile": ("/reg/neh/operator_amoopr/"
+    "baselineEnd_us": 0.207, 
+    "calib_file": ("/reg/neh/operator_amoopr/"
 		    + "amoh5215/psana/tofCalibs/tof_calib_0.json"), 
     "filterMethod": "none", # wavelet, average, wienerDeconv 
     "filterWaveletLevels": 10, 
@@ -15,9 +15,9 @@ basicTofConfig = {
     "filterWinerResponse":1,
     "filterAverageNumPoints":4,
     "detectorSource": "DetInfo(AmoETOF.0:Acqiris.0)", 
-    "tMin_us": 0.0, 
-    "tMax_us": 0.4, 
-    "tSlice": True 
+    "t_min_us": 0.20, 
+    "t_max_us": 0.26, 
+    "t_slice": True
 }
 
 lclsConfig = {
@@ -29,6 +29,7 @@ retardationPV = 'AMO:R14:IOC:10:VHS0:CH0:VoltageMeasure'
 
 # Acqiris channel asignment
 acqiris_setup = {
+        4:['ACQ1', 6],
         3:['ACQ4', 0],
         2:['ACQ4', 1],
         1:['ACQ4', 2],
@@ -40,46 +41,54 @@ acqiris_setup = {
         11:['ACQ1', 0],
         10:['ACQ1', 1],
         9:['ACQ1', 2],
-        8:['ACQ1', 3],
-        7:['ACQ1', 4],
-        6:['ACQ1', 5],
-        5:['ACQ1', 6],
-        4:['ACQ1', 7]
+        8:['ACQ2', 0],
+        7:['ACQ1', 3],
+        6:['ACQ2', 1],
+        5:['ACQ1', 5],
         }
 
+# ROI for the photo line
+# red
+time_roi_0_us_common = [0.232, 0.245]
+time_roi_0_us = [time_roi_0_us_common]*16
+# Background for the photoline
+time_roi_2_us_common = [0.23, 0.232]
+time_roi_2_us = [time_roi_2_us_common]*16
 
-timeRoi0_us_common = [0.2, 0.21]	#red
-timeRoi0_us = [timeRoi0_us_common]*16
+# ROI for the auger line
+# green
+time_roi_1_us_common = [0.215, 0.225]
+time_roi_1_us = [time_roi_1_us_common]*16
 
-timeRoi0Bg_us_common = [0., 0.05]
-timeRoi0Bg_us = [timeRoi0Bg_us_common]*16
-
-timeRoi1_us_common = [0.3, 0.4]	#green
-timeRoi1_us = [timeRoi1_us_common]*16
-
-energyRoi0_eV_common = [40, 60]
-energyRoi0_eV = [energyRoi0_eV_common]*16
+energy_roi_0_eV_common = [40, 60]
+energy_roi_0_eV = [energy_roi_0_eV_common]*16
 
 
 
 # Make copies of the basic configuration for each of the detectors
-tofConfigList = [None] * 16
+tof_config_list = [None] * 16
 
 def makeTofConfigList(online=True):
-    global tofConfigList
+    global tof_config_list
     for i in range(16):
-        tofConfigList[i] = basicTofConfig.copy()
-	tofConfigList[i]['calibFile'] = ('/reg/neh/operator/amoopr/'
-		    + 'amoi0114/psana/tofCalibs/tof{}Calib.json'.format(i+1)) 
-	if online:
-            tofConfigList[i]['detectorSource'] = acqiris_setup[i][0]
-            tofConfigList[i]['acqCh'] = acqiris_setup[i][1]
+        tof_config_list[i] = basicTofConfig.copy()
+        tof_config_list[i]['calibFile'] = ('/reg/neh/operator/amoopr/'
+                + 'amoi0114/psana/tofCalibs/tof{}Calib.json'.format(i+1)) 
+        tof_config_list[i]['detectorSource'] = acqiris_setup[i][0]
+        tof_config_list[i]['acqCh'] = acqiris_setup[i][1]
 
+        tof_config_list[i]['time_roi_0_us'] = time_roi_0_us[i]
+        tof_config_list[i]['time_roi_2_us'] = time_roi_2_us[i]
+        tof_config_list[i]['time_roi_1_us'] = time_roi_1_us[i]
+        tof_config_list[i]['energy_roi_0_eV'] = energy_roi_0_eV[i]
+        #tof_config_list[i]['energy_roi_1_eV'] = energy_roi_1_eV[i]
+        #tof_config_list[i]['energy_roi_2_eV'] = energy_roi_2_eV[i]
+	
 makeTofConfigList(online=True)
 
 minE_eV = 10
-maxE_eV = 500
-nEnergyBins = 256
+maxE_eV = 200
+nEnergyBins = 2**9
 
 energyScaleBinLimits = np.linspace(minE_eV, maxE_eV, nEnergyBins + 1)
 

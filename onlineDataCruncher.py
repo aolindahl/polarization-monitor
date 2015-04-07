@@ -170,6 +170,9 @@ def masterDataSetup(masterData, args):
 
     # Storage for the trace avareaging buffer
     masterData.time_amplitude_filtered_buffer = deque([], args.traceAverage)
+
+    # Storage for the auger averaging
+    masterData.auger_buffer = deque([], args.roi1Average)
     
 def masterLoopSetup(args):
     # Master loop data collector
@@ -413,6 +416,10 @@ def mergeMasterAndWorkerData(evtData, masterLoop, args):
             [d[dIntRoi0] for d in masterLoop.arrived])
     evtData.intRoi1 = np.array( evtData.intRoi1 +
             [d[dIntRoi1] for d in masterLoop.arrived])
+    if len(evtData.intRoi1) == 1:
+        evtData.auger_buffer.append(evtData.intRoi1)
+    else:
+        evtData.auger_buffer.extend(evtData.intRoi1)
     evtData.pol = np.array( evtData.pol + [d[dPol] for d in masterLoop.arrived])
     if args.photonEnergy != 'no':
         evtData.energy = np.array( evtData.energy + [d[dEnergy] for d in
@@ -469,26 +476,12 @@ def sendPVs(evtData, scales,  pvHandler, args):
 
     return
 
-def zmqPlotting(evtData, augerAverage, scales, zmq):
+def zmqPlotting(evtData, scales, zmq):
  
-    # Averaging of roi 1 
-    if augerAverage.fOldRoi1 != 0:
-        if augerAverage.plotRoi1 is None:
-            augerAverage.plotRoi1 = evtData.intRoi1[0,:]
-        else:
-            augerAverage.plotRoi1 *= augerAverage.fOldRoi1
-            augerAverage.plotRoi1 += augerAverage.fNewRoi1 \
-                    * evtData.intRoi1[0,:]
-        for r1 in evtData.intRoi1[1:,:]:
-            augerAverage.plotRoi1 *= augerAverage.fOldRoi1
-            augerAverage.plotRoi1 += augerAverage.fNewRoi1 \
-                    * evtData.intRoi1[0,:]
-    else:
-        augerAverage.plotRoi1 = evtData.intRoi1[-1,:]
     plotData = {}
     plotData['polar'] = {
             'roi0':evtData.intRoi0[-1,:],
-            'roi1':augerAverage.plotRoi1,
+            'roi1': np.average(evtData.auger_buffer, axis=0),
             'A':evtData.pol[-1][0],
             'beta':evtData.pol[-1][2],
             'tilt':evtData.pol[-1][4],
@@ -609,13 +602,6 @@ def main(args, verbose=False):
     
             masterLoop = masterLoopSetup(args) 
 
-    
-            # Averaging factor for the augers
-            augerAverage = aolUtil.struct()
-            augerAverage.fNewRoi1 = args.roi1Average
-            augerAverage.fOldRoi1 = 1. - augerAverage.fNewRoi1
-            augerAverage.plotRoi1 = None
-
             if args.saveData != 'no':
                 saveFile = openSaveFile(args.saveData, not args.offline, config)
             
@@ -725,7 +711,7 @@ def main(args, verbose=False):
     
     
                 # Send data for plotting
-                zmqPlotting(eventData, augerAverage, scales, zmq)
+                zmqPlotting(eventData, scales, zmq)
 
                 if args.saveData != 'no':
                     writeDataToFile(saveFile, eventData, args.saveData)

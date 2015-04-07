@@ -103,13 +103,14 @@ def parse():
             help = ('Moving average with weight on last point'))
 
     parser.add_argument(
+            '-1A',
             '--roi1Average',
-            type = float,
+            type = int,
             default = 1,
-            metavar = 'WEIGHT',
+            metavar = 'numShots',
             help = ('Averaging for the intensities in roi 1.' +
-                ' The number given is the weight of the latest point.' +
-                ' Default = None.'))
+                ' Number of shots to use.' +
+                ' Default = 1.'))
 
     parser.add_argument(
             '--bgAverage',

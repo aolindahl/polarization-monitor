@@ -100,7 +100,17 @@ def parse():
             type = float,
             metavar = 'WEIGHT',
             default = None,
-            help = ('Moving average with weight on last point'))
+            help = ('Moving average with weight on last point.' +
+                    ' This averaging is performed each core when' +
+                    ' the raw data is grabbed from the evet.'))
+
+    parser.add_argument(
+            '-pA',
+            '--polAverage',
+            type=int,
+            metavar='numShots',
+            help=('Averaging for the polarization parameters.' +
+                  ' Default = 1.'))
 
     parser.add_argument(
             '-1A',
@@ -158,18 +168,6 @@ def parse():
             type=float,
             metavar = 'threshold_mJ',
             default = -1.0)
-
-    parser.add_argument(
-            '-L3min',
-            type = float,
-            metavar = 'MeV',
-            default = 0)
-
-    parser.add_argument(
-            '-L3max',
-            type = float,
-            metavar = 'MeV',
-            default = 1e20)
 
 
     args = parser.parse_args()

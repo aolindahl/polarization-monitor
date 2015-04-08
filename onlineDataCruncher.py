@@ -168,11 +168,18 @@ def masterDataSetup(masterData, args):
     masterData.timeAmplitudeRoi0 = None
     masterData.timeAmplitudeRoi1 = None
 
-    # Storage for the trace avareaging buffer
-    masterData.time_amplitude_filtered_buffer = deque([], args.traceAverage)
+    # Set up the buffers only the first time
+    if not hasattr(masterData, 'time_amplitude_filtered_buffer'):
+        print 'New stuff for the masterData!'
+        # Storage for the trace avareaging buffer
+        masterData.time_amplitude_filtered_buffer = deque([], args.traceAverage)
 
-    # Storage for the auger averaging
-    masterData.auger_buffer = deque([], args.roi1Average)
+        # Storage for the auger averaging
+        masterData.auger_buffer = deque([], args.roi1Average)
+
+        # Buffers for the polarization averageing
+        masterData.pol_degree_buffer = deque([], args.polAverage)
+        masterData.pol_angle_buffer = deque([], args.polAverage)
     
 def masterLoopSetup(args):
     # Master loop data collector
@@ -244,9 +251,10 @@ def setupRecives(masterLoop, verbose=False):
     # Counter for the processed evets
     masterLoop.nProcessed = 0
 
-def eventDataContainer(args):
+def eventDataContainer(args, event=None):
     # Set up some data containers
-    event = aolUtil.struct()
+    if event is None:
+        event = aolUtil.struct()
     event.sender = []
     event.fiducials = []
     event.times = []
@@ -311,7 +319,7 @@ def appendEventData(evt, evtData, cb, lcls, config, scales, detCalib):
     #print params['A'].value, params['linear'].value, params['tilt'].value
     
     #lmfit.report_fit(params)
-                
+
     # Store the values
     evtData.pol.append(np.array( [
         params['A'].value, params['A'].stderr,
@@ -344,9 +352,12 @@ def appendEpicsData(epics, evtData):
 def masterEventData(evtData, cb, masterLoop, verbose=False):
     # Grab the y data
     try:
-        evtData.energyAmplitude = np.average(cb.get_energy_amplitudes(), axis=0)
-        evtData.energyAmplitudeRoi0 = np.average(
-            cb.get_energy_amplitudes(roi=0), axis=0)
+        evtData.energyAmplitude = cb.get_energy_amplitudes()[7]
+        evtData.energyAmplitudeRoi0 = cb.get_energy_amplitudes(roi=0)[7]
+        #evtData.energyAmplitude = np.average(cb.get_energy_amplitudes(),
+        #    axis=0)
+        #evtData.energyAmplitudeRoi0 = np.average(
+        #    cb.get_energy_amplitudes(roi=0), axis=0)
 
 
         evtData.timeAmplitude = cb.get_time_amplitudes()
@@ -358,6 +369,9 @@ def masterEventData(evtData, cb, masterLoop, verbose=False):
         evtData.timeAmplitude = None
         return
 
+    for trace in evtData.timeAmplitudeFiltered:
+        if trace is None:
+            return
     evtData.time_amplitude_filtered_buffer.append(evtData.timeAmplitudeFiltered)
 
     if verbose:
@@ -420,7 +434,18 @@ def mergeMasterAndWorkerData(evtData, masterLoop, args):
         evtData.auger_buffer.append(evtData.intRoi1)
     else:
         evtData.auger_buffer.extend(evtData.intRoi1)
+
+    # Polarizatio information
     evtData.pol = np.array( evtData.pol + [d[dPol] for d in masterLoop.arrived])
+    for pol in evtData.pol:
+        if np.isfinite(pol[6]):
+            evtData.pol_degree_buffer.append(pol[6])
+            pol[6] = np.average(evtData.pol_degree_buffer)
+        if np.isfinite(pol[4]):
+            evtData.pol_angle_buffer.append(pol[4])
+            pol[4] = np.average(evtData.pol_angle_buffer)
+
+
     if args.photonEnergy != 'no':
         evtData.energy = np.array( evtData.energy + [d[dEnergy] for d in
             masterLoop.arrived] )
@@ -636,11 +661,13 @@ def main(args, verbose=False):
 
         # Get the epics store
         epics = ds.env().epicsStore()
+
+        eventData = None
     
         # The main loop that never ends...
         while 1:
             # An event data container
-            eventData = eventDataContainer(args)
+            eventData = eventDataContainer(args, event=eventData)
                 
             # The master should set up the recive requests
             if rank == 0:
@@ -652,9 +679,9 @@ def main(args, verbose=False):
             while (time.time() < masterLoop.tStop) if rank==0 else 1 :
         
                 # If offline
-                #if  args.offline:
+                if  args.offline:
                     # wait for a while
-                    # time.sleep(0.00001)
+                     time.sleep(0.1)
     
     
                 # Get the next event

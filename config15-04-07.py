@@ -60,7 +60,7 @@ time_roi_2_us = [time_roi_2_us_common]*16
 time_roi_1_us_common = [0.215, 0.225]
 time_roi_1_us = [time_roi_1_us_common]*16
 
-energy_roi_0_eV_common = [40, 60]
+energy_roi_0_eV_common = [50, 100]
 energy_roi_0_eV = [energy_roi_0_eV_common]*16
 
 
@@ -72,8 +72,9 @@ def makeTofConfigList(online=True):
     global tof_config_list
     for i in range(16):
         tof_config_list[i] = basicTofConfig.copy()
-        tof_config_list[i]['calibFile'] = ('/reg/neh/operator/amoopr/'
-                + 'amoi0114/psana/tofCalibs/tof{}Calib.json'.format(i+1)) 
+        tof_config_list[i]['calibFile'] = ('/reg/neh/operator/amoopr/' +
+                'amoh5215/psana/tofCalibs/i' +
+                'tof_calib_{}Calib.json'.format(i)) 
         tof_config_list[i]['detectorSource'] = acqiris_setup[i][0]
         tof_config_list[i]['acqCh'] = acqiris_setup[i][1]
 

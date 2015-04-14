@@ -622,8 +622,8 @@ def main(args, verbose=False):
     
             # Set up the PV handler
             if args.sendPV:
-                import pvForCb
-                pvHandler = pvForCb.PvHandler(timeout=1.0)
+                import pv_handler
+                pvHandler = pv_handler.PvHandler(timeout=1.0)
     
             masterLoop = masterLoopSetup(args) 
 

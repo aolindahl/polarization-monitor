@@ -1,3 +1,6 @@
+# Adding direcotries to the path for the pv read/write.
+import sys
+sys.path.append('/reg/common/package/release/sxr-0.0.1/x86_64-rhel5-gcc41-opt/python')
 import pyca
 from Pv import Pv
 from numpy import nan as npNan

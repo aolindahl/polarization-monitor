@@ -1,6 +1,7 @@
 import sys
 import os.path
 sys.path.append( os.path.dirname(os.path.abspath(__file__)) +  '/aolPyModules')
+from collections import deque
 import ZmqSender
 import matplotlib.animation as animation
 import zmq
@@ -32,13 +33,18 @@ def mainPlotter(args, verbose=False):
     roi1 = 3
 
     angle = np.linspace(0, np.pi*2, 1000)
-    
+  
+    nHistory = 1e4
     storage = {
-            'fiducial':np.empty(0),
-            'degree':np.empty(0),
-            'err_degree':np.empty(0),
-            'tilt':np.empty(0),
-            'err_tilt':np.empty(0)}
+            'fiducial':deque([], nHistory),
+            'degree':deque([], nHistory),
+            'err_degree':deque([], nHistory),
+            'tilt':deque([], nHistory),
+            'err_tilt':deque([], nHistory),
+            'intFull':deque([], nHistory),
+            'intRoi0':deque([], nHistory),
+            'intRoi1':deque([], nHistory) }
+
 
     def updatePlot(figs):
         socket.recv()
@@ -56,28 +62,40 @@ def mainPlotter(args, verbose=False):
                 print '*** got last data'
                 break
         if verbose: 
-            print 'Datat contains:'
+            print 'Data contains:'
             for k, v in data.iteritems():
                 print '\t{} of type {}'.format(k, type(v)),
-                if type(v) == dict:
+                if isinstance(v, dict):
                     print 'with components:'
                     for k2, v2 in v.iteritems():
                         print '\t\t{} of type {}'.format(k2, type(v2)),
-                        print ''
+
+                        if isinstance(v2, list):
+                            print 'of length {}.'.format(len(v2))
+                            print '\t\t\tlengths = (',
+                            for elem in v2:
+                                try:
+                                    print '{},'.format(len(elem)),
+                                except:
+                                    pass
+                            print ')'
+
+                        elif isinstance(v2, np.ndarray):
+                            print 'of shape {}.'.format(v2.shape)
                 else:
                     print ''
 
 
-            try:
-                print 'polar:roi0 =', data['polar']['roi0']
-                print 'polar:roi1 =', data['polar']['roi1']
-            except:
-                pass
+            #try:
+            #    print 'polar:roi0 =', data['polar']['roi0']
+            #    print 'polar:roi1 =', data['polar']['roi1']
+            #except:
+            #    pass
 
-            try:
-                print 'err_degree = ', data['strip'][1][:,7]
-            except:
-                pass
+            #try:
+            #    print 'err_degree = ', data['strip'][1][:,7]
+            #except:
+            #    pass
 
         plotKey = 'polar'
         if plotKey in data.keys():
@@ -120,29 +138,27 @@ def mainPlotter(args, verbose=False):
             ax.cla()
             ax.set_title('Degree of linear polarization.')
 
-            storage['fiducial'] = np.concatenate(
-                    [storage['fiducial'], data[plotKey][0]] )
-            storage['degree'] = np.concatenate(
-                    [storage['degree'], data[plotKey][1][:,6]] )
-            storage['err_degree'] = np.concatenate(
-                    [storage['err_degree'], data[plotKey][1][:,7]] )
-            storage['tilt'] = np.concatenate(
-                    [storage['tilt'], data[plotKey][1][:,4]] )
-            storage['err_tilt'] = np.concatenate(
-                    [storage['err_tilt'], data[plotKey][1][:,5]] )
+            storage['fiducial'].extend( data[plotKey][0] )
+            storage['degree'].extend( data[plotKey][1][:,6] )
+            storage['err_degree'].extend( data[plotKey][1][:,7] )
+            storage['tilt'].extend( data[plotKey][1][:,4] )
+            storage['err_tilt'].extend( data[plotKey][1][:,5] )
+            #storage['intFull'].extend(data[plotKey][2])
+            storage['intRoi0'].extend(data[plotKey][2])
+            #storage['intRoi1'].extend(data[plotKey][4])
 
-            for k in ['fiducial', 'degree', 'err_degree', 'tilt', 'err_tilt']:
-                if len(storage[k]) > 1000:
-                    storage[k] = storage[k][-1000:]
 
 
             #ax.plot(storage['fiducial'], storage['degree'],'.')
             #plt.sca(ax)
             if args.errors:
-                ax.errorbar(storage['fiducial'], storage['degree'],
-                        storage['err_degree'], linestyle='', marker='.', capsize=0)
+                ax.errorbar(np.array(storage['fiducial']),
+                            np.array(storage['degree']),
+                            np.array(storage['err_degree']),
+                            linestyle='', marker='.', capsize=0)
             else:
-                ax.plot(storage['fiducial'], storage['degree'],
+                ax.plot(np.array(storage['fiducial']), 
+                        np.array(storage['degree']),
                         linestyle='', marker='.')
 
             if args.a:
@@ -162,10 +178,13 @@ def mainPlotter(args, verbose=False):
             ax.cla()
             ax.set_title('Polarization tilt')
             if args.errors:
-                ax.errorbar(storage['fiducial'], storage['tilt'],
-                        storage['err_tilt'], linestyle='', marker='.', capsize=0)
+                ax.errorbar(np.array(storage['fiducial']),
+                            np.array(storage['tilt']),
+                            np.array(storage['err_tilt']),
+                            linestyle='', marker='.', capsize=0)
             else:
-                ax.plot(storage['fiducial'], storage['tilt']*180/np.pi,
+                ax.plot(np.array(storage['fiducial']),
+                        np.array(storage['tilt'])*180/np.pi,
                         linestyle='', marker='.')
 
             if args.a:
@@ -176,6 +195,16 @@ def mainPlotter(args, verbose=False):
             #ax.errorbar(data[plotKey][0], data[plotKey][1][:,4],
             #        data[plotKey][1][:,5], ls='None', color='b')
 
+            ax = figs[2].axes[2]
+            ax.cla()
+            ax.set_title('Photoline intensity')
+            ax.plot(np.array(storage['fiducial']),
+                    np.array(storage['intRoi0']),
+                    '.')
+            ax.relim()
+            ax.autoscale_view()
+            min_value, _ = ax.get_ylim()
+            ax.set_ylim(bottom=np.minimum(min_value, 0))
 
 
             figs[2].canvas.draw()
@@ -235,6 +264,8 @@ def mainPlotter(args, verbose=False):
             print 'init'
 
         # tof traces
+        if verbose:
+            print 'Make the tof trace plot.'
         fig1, f1ax = plt.subplots(4,4, sharex=True, sharey=True, num='Traces',
                 figsize = (24, 18))
 
@@ -251,9 +282,10 @@ def mainPlotter(args, verbose=False):
            ax.grid(True)
            ax.legend(loc='upper right', prop={'size': 8})
 
-        fig1.show()
 
         # Polar plot
+        if verbose:
+            print 'Make the polar plot.'
         fig2 = plt.figure('ROI amplitudes')
         f2ax = fig2.add_subplot(111, polar=True)
         f2ax.plot(np.arange(0, 2*np.pi, np.pi/8), np.ones(16), 'or',
@@ -268,28 +300,44 @@ def mainPlotter(args, verbose=False):
         f2ax.set_ylim(0, 1.1)
 
         f2ax.legend()
-        fig2.show()
 
         # Polarization strip shart
+        if verbose:
+            print 'Make the polarization strip chart.'
         fig3 = plt.figure('Polarization')
-        fig3.add_subplot(211)
+        fig3.add_subplot(311)
         fig3.axes[0].set_title('Degree of linear polarization')
         fig3.axes[0].set_ylim(-0.5, 1.5)
         fig3.axes[0].grid(True)
-        fig3.add_subplot(212)
+        fig3.add_subplot(312)
         fig3.axes[1].set_title('Angle of residual linear polarization')
         fig3.axes[1].set_ylim(-2, 2)
+        fig3.axes[1].grid(True)
+        fig3.add_subplot(313)
+        #fig3.axes[1].set_title('Angle of residual linear polarization')
+        #fig3.axes[1].set_ylim(-2, 2)
         fig3.axes[1].grid(True)
 
         #f3ax.plot([],[], [], '.', label='Degree of circular polarization')
 
-        fig3.show()
-
-
+        # Energy spectrum plot
+        if verbose:
+            print 'Make the energy spectrum plot.'
         fig4 = plt.figure('Energy spectrum')
         fig4.add_subplot(111)
         fig4.axes[0].plot([],[],'b', [],[],'r')
-        fig4.show()
+
+        # Show the plots
+        if args.show_plots:
+            if verbose:
+                print 'Showing the plots.'
+            fig1.show()
+            fig2.show()
+            fig3.show()
+            fig4.show()
+
+        if verbose:
+            print 'init finished.'
 
         return [fig1, fig2, fig3, fig4]
         
@@ -332,7 +380,12 @@ if __name__ == '__main__':
             help='Autoscale strip chart y axis.')
 
     parser.add_argument(
-            '-e', '--errors', action='store_true')
+            '-e', '--errors', action='store_true',
+            help='Plot with error bars in the strip chart.')
+
+    parser.add_argument(
+            '--no-plots', action='store_false', dest='show_plots',
+            help='For debuggin, does not show the plots.')
 
     args = parser.parse_args()
     

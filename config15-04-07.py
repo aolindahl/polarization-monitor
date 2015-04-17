@@ -90,8 +90,8 @@ makeTofConfigList(online=True)
 minE_eV = 10
 maxE_eV = 200
 nEnergyBins = 2**9
-
-energyScaleBinLimits = np.linspace(minE_eV, maxE_eV, nEnergyBins + 1)
+energy_scale_eV = np.linspace(minE_eV, maxE_eV,  2*nEnergyBins + 1)[1::2]
+#energyScaleBinLimits = np.linspace(minE_eV, maxE_eV, nEnergyBins + 1)
 
 
 fitMask = np.array([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15])
@@ -101,14 +101,6 @@ fitMask = np.array([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15])
 boolFitMask = np.array([i in fitMask for i in range(16)])
 nanFitMask = np.array([1 if b else np.nan for b in boolFitMask])
 
-offlineSource = 'exp=amoh5215:run=216'
+energy_spectrum_mask = np.array([i in [8] for i in range(16)])
 
-# For CookieBox class debugging
-domainToDisplay = 'Time'
-
-
-# Stuff below are used in the debugging of the tofData class
-
-dataSource = 'exp=amoc8114:run=31'
-nEvents = 10
-useZmq = False
+offline_source = 'exp=amoh5215:run=216'

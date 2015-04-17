@@ -17,13 +17,13 @@ import lmfit
 import aolUtil
 import simplepsana
 import cookie_box
-import lclsData
+import lcls
 
 # Set up the mpi cpmmunication
 world = MPI.COMM_WORLD
 rank = world.Get_rank()
 worldSize = world.Get_size()
-
+workers = worldSize - 1
 
 
 #############
@@ -55,15 +55,16 @@ s += 4
 
 dSize = s
 
+dTraces = None
+d_energy_trace = None
 
-def connectToDataSource(args, config, verbose=False):
+def connect_to_data_source(args, config, verbose=False):
     # If online
     if not args.offline:
         # make the shared memory string
         dataSource = 'shmem=AMO.0:stop=no'
     else:
-        dataSource = config.offlineSource
-        #config.makeTofConfigList(online=False)
+        dataSource = ':'.join([config.offline_source, 'idx'])
         if verbose:
             print config
 
@@ -116,7 +117,8 @@ def getDetectorCalibration(verbose=False, fileName=''):
 
 
     if args.calibrate == -1:
-        detCalib.factors = np.loadtxt(detCalib.path + '/' + detCalib.name +
+        detCalib.factors = np.loadtxt(detCalib.path + '/' +
+                detCalib.name.strip('.txt') +
                 '{}.txt'.format( detCalib.fileNumber if
                     np.isfinite(detCalib.fileNumber) else '' ) ) 
     else:
@@ -128,9 +130,9 @@ def getDetectorCalibration(verbose=False, fileName=''):
     return detCalib
 
 
-def saveDetectorCalibration(masterLoop, detCalib, config, verbose=False, beta=0):
+def saveDetectorCalibration(master_loop, detCalib, config, verbose=False, beta=0):
     # Concatenate the list of all calibration data
-    calibValues = np.concatenate(masterLoop.calibValues, axis=0)
+    calibValues = np.concatenate(master_loop.calibValues, axis=0)
     # Check the data that is not NAN
     I = np.isfinite(calibValues.sum(axis=1))
     # average the finite values
@@ -147,7 +149,7 @@ def saveDetectorCalibration(masterLoop, detCalib, config, verbose=False, beta=0)
     
     if verbose:
         print len(calibValues)
-        print masterLoop.calibValues[0].shape
+        print master_loop.calibValues[0].shape
         print calibValues.shape
         print average
         print 'Calibration factors:', factors
@@ -159,69 +161,81 @@ def saveDetectorCalibration(masterLoop, detCalib, config, verbose=False, beta=0)
     np.savetxt(calibFile, factors)
           
 
-def masterDataSetup(masterData, args):
+def master_data_setup(args):
     # Container for the master data
-    masterData.energyAmplitude = None
-    masterData.energyAmplitudeRoi0 = None
-    masterData.timeAmplitude = None
-    masterData.timeAmplitudeFiltered = None
-    masterData.timeAmplitudeRoi0 = None
-    masterData.timeAmplitudeRoi1 = None
+    # This is mainly for the averaging buffers
+    master_data = aolUtil.struct()
+    #master_data.energyAmplitude = None
+    #master_data.energyAmplitudeRoi0 = None
+    #master_data.timeAmplitude = None
+    #master_data.timeAmplitudeFiltered = None
+    #master_data.timeAmplitudeRoi0 = None
+    #master_data.timeAmplitudeRoi1 = None
 
-    # Set up the buffers only the first time
-    if not hasattr(masterData, 'time_amplitude_filtered_buffer'):
-        print 'New stuff for the masterData!'
-        # Storage for the trace avareaging buffer
-        masterData.time_amplitude_filtered_buffer = deque([], args.traceAverage)
+    # Storage for the trace avareaging buffer
+    master_data.time_trace_buffer = deque([], args.traceAverage)
+    master_data.roi_0_buffer = deque([], args.roi0Average)
+    master_data.energy_trace_buffer = deque([], args.traceAverage)
 
-        # Storage for the auger averaging
-        masterData.auger_buffer = deque([], args.roi1Average)
+    # Storage for roi averaging
+    master_data.roi_0_buffer = deque([], args.roi0Average)
+    master_data.roi_1_buffer = deque([], args.roi1Average)
 
-        # Buffers for the polarization averageing
-        masterData.pol_degree_buffer = deque([], args.polAverage)
-        masterData.pol_angle_buffer = deque([], args.polAverage)
+    # Buffers for the polarization averageing
+    master_data.pol_degree_buffer = deque([], args.polAverage)
+    master_data.pol_angle_buffer = deque([], args.polAverage)
+    master_data.pol_roi0_buffer = deque([], args.polAverage)
+
+    return master_data
     
-def masterLoopSetup(args):
+def master_loop_setup(args):
     # Master loop data collector
-    masterLoop = aolUtil.struct()
+    master_loop = aolUtil.struct()
     # Define the plot interval from the command line input
-    masterLoop.tPlot = args.plotInterval
-
-    # set up the buffer size to be able to handle twice the amoun of
-    # data that is expected
-    masterLoop.bufSize = int(np.round(120 * masterLoop.tPlot * 1.3))
-
+    master_loop.tPlot = args.plotInterval
 
     # Make template of the array that should be sent between the ranks
-    masterLoop.bufTemplate = np.empty((1, dSize), dtype=float)
+    master_loop.buf_template = np.empty((dSize,), dtype=float)
     
-    # Make empty queues.
-    masterLoop.req = deque()
-    masterLoop.buf = deque()
-        
     # Initialize the stop time
-    masterLoop.tStop = time.time()
+    master_loop.tStop = time.time()
     
     # Calibration
     if args.calibrate > -1:
-        masterLoop.calibValues = []
+        master_loop.calibValues = []
     
-    return masterLoop
+    return master_loop
 
 
-def getScales(cb, config):
+def get_scales(env, cb, verbose=False):
+    global dSize
+    global dTraces
+    global d_energy_trace
+
     # A struct object to hold the scale information
     scales = aolUtil.struct()
+
     # Assume that all the tofs have the same energy scale and use only the first
     # one.
     scales.energy_eV = cb.get_energy_scales_eV()[0]
     scales.energyRoi0_eV = cb.get_energy_scales_eV(roi=0)[0]
+    scales.energyRoi0_slice = slice(
+            scales.energy_eV.searchsorted(np.min(scales.energyRoi0_eV)),
+            scales.energy_eV.searchsorted(np.max(scales.energyRoi0_eV), side='right'))
     
     # Get all the time scales
     scales.time_us = cb.get_time_scales_us()
     scales.timeRoi0_us = cb.get_time_scales_us(roi=0)
+    scales.timeRoi0_slice = [slice(full.searchsorted(np.min(part)),
+                                   full.searchsorted(np.max(part),
+                                       side='right')) for full, part in
+                                   zip(scales.time_us, scales.timeRoi0_us)]
     scales.timeRoi2_us = cb.get_time_scales_us(roi=2)
     scales.timeRoi1_us = cb.get_time_scales_us(roi=1)
+    scales.timeRoi1_slice = [slice(full.searchsorted(np.min(part)),
+                                   full.searchsorted(np.max(part),
+                                       side='right')) for full, part in
+                                   zip(scales.time_us, scales.timeRoi1_us)]
     for i, scale_list in enumerate([scales.timeRoi0_us,
                                     scales.timeRoi1_us,
                                     scales.timeRoi2_us]):
@@ -238,20 +252,20 @@ def getScales(cb, config):
     # Get some angle vectors
     scales.angles = cb.getAngles('rad')
     scales.anglesFit = np.linspace(0, 2*np.pi, 100)
+
+    # Update the data size descriptions in the globals
+    traces_size = 16 * np.max([len(t) for t in scales.time_us])
+    dTraces = slice(dSize, dSize + traces_size)
+    dSize += traces_size
+
+    energy_trace_size = len(scales.energy_eV)
+    d_energy_trace = slice(dSize, dSize+energy_trace_size)
+    dSize += energy_trace_size
+
+
     return scales
 
-def setupRecives(masterLoop, verbose=False): 
-    # Set up the requests for recieving data
-    while len(masterLoop.buf) < masterLoop.bufSize:
-        masterLoop.buf.append(masterLoop.bufTemplate.copy())
-        masterLoop.req.append(world.Irecv([masterLoop.buf[-1], MPI.FLOAT],
-            source=MPI.ANY_SOURCE))
-    if verbose:
-        print 'master set up for', len(masterLoop.buf), 'non blocking recives'
-    # Counter for the processed evets
-    masterLoop.nProcessed = 0
-
-def eventDataContainer(args, event=None):
+def event_data_container(args, event=None):
     # Set up some data containers
     if event is None:
         event = aolUtil.struct()
@@ -274,33 +288,85 @@ def eventDataContainer(args, event=None):
 
     return event
 
-def appendEventData(evt, evtData, cb, lcls, config, scales, detCalib):
-    evtData.sender.append(rank)
+def get_event_data(config, scales, detCalib, cb, args, epics, verbose=False):
+    if verbose:
+        print 'Rank {} grabbing data.'.format(rank)
+
+    data = np.zeros(dSize, dtype=float)
+    
+    # Get the time amplitudes
+    time_amplitudes = cb.get_time_amplitudes_filtered()
+    # If there is a None in the data, some axqiris trace is missing
+    if None in time_amplitudes:
+        # Don't try to pull any more data from this event
+        print 'Rank {} detected None in time amplitude.'.format(rank)
+        return None
+
+    # This construction can handle traces of different length
+    data[dTraces] = np.nan
+    length = (dTraces.stop - dTraces.start) / 16
+    #print 'length =', length
+    #print data.shape, dTraces.start, dTraces.stop
+    start = dTraces.start
+    for t_sig in time_amplitudes:
+        if t_sig is None:
+            return req
+        #print len(t_sig)
+        #print start, start+len(t_sig)
+        #print data.shape, data[dTraces].shape
+        data[start : start + len(t_sig)] = t_sig
+        start += length
+
+
+#def masterEvent_data(evt_data, cb, master_loop, verbose=False):
+#    # Grab the y data
+#    try:
+#        evt_data.energyAmplitude = cb.get_energy_amplitudes()[7]
+#        evt_data.energyAmplitudeRoi0 = cb.get_energy_amplitudes(roi=0)[7]
+#        #evt_data.energyAmplitude = np.average(cb.get_energy_amplitudes(),
+#        #    axis=0)
+#        #evt_data.energyAmplitudeRoi0 = np.average(
+#        #    cb.get_energy_amplitudes(roi=0), axis=0)
+#        evt_data.timeAmplitude = cb.get_time_amplitudes()
+#        evt_data.timeAmplitudeFiltered = cb.get_time_amplitudes_filtered()
+#        evt_data.timeAmplitudeRoi0 = cb.get_time_amplitudes_filtered(roi=0)
+#        evt_data.timeAmplitudeRoi1 = cb.get_time_amplitudes_filtered(roi=1)
+#   except TypeError:
+#        evt_data.timeAmplitude = None
+#        return
+#    for trace in evt_data.timeAmplitudeFiltered:
+#        if trace is None:
+#            return
+#    evt_data.time_amplitude_filtered_buffer.append(evt_data.timeAmplitudeFiltered)
+#
+#    if verbose:
+#        print 'Rank', rank, '(master) grabbed one event.'
+#    # Update the event counters
+#    master_loop.nProcessed += 1
 
 
     # Get the intensities
-    evtData.intRoi0.append(
-        (
-            cb.get_intensity_distribution(domain='Time',
-                rois=0,
-                detFactors=detCalib.factors)
-            - cb.get_intensity_distribution(domain='Time',
-                rois=2,
-                detFactors = detCalib.factors) * scales.tRoi0BgFactors
-            ) * config.nanFitMask)
+    # Roi 0 base information (photoline)
+    data[dIntRoi0] = np.array([np.sum(trace) for trace
+                               in cb.get_time_amplitudes_filtered(roi=0)])
+    # Use roi 2 for backgorud subtraction, could be commented out to not do
+    # subtraction...
+    data[dIntRoi0] -= (np.array([np.sum(trace) for trace
+                                 in cb.get_time_amplitudes_filtered(roi=2)]) *
+                       scales.tRoi0BgFactors)
+    # Rescale the data for roi 0
+    data[dIntRoi0] *= config.nanFitMask * detCalib.factors
 
-    #evtData.intRoi0Bg
-    
-    evtData.intRoi1.append(cb.get_intensity_distribution(domain='Time',
-        rois=1, detFactors=detCalib.factors) *
-        config.nanFitMask)
+    # Get roi 1 imformation (auger line)
+    data[dIntRoi1] = (np.sum(cb.get_time_amplitudes_filtered(roi=1), axis=1) *
+                      detCalib.factors * config.nanFitMask)
         
     # Get the initial fit parameters
-    #params = cookie_box.initial_params(evtData.intRoi0[-1])
+    #params = cookie_box.initial_params(evt_data.intRoi0[-1])
     params = cookie_box.initial_params()
     params['A'].value, params['linear'].value, params['tilt'].value = \
-            cb.proj.solve(evtData.intRoi0[-1], args.beta)
-    # Lock the beta parameter. To the command line?
+            cb.proj.solve(data[dIntRoi0], args.beta)
+    # Lock the beta parameter
     params['beta'].value = args.beta
     params['beta'].vary = False
 
@@ -308,12 +374,12 @@ def appendEventData(evt, evtData, cb, lcls, config, scales, detCalib):
     
     # Perform the fit
     #print scales.angles[config.boolFitMask]
-    #print evtData.intRoi0[-1][config.boolFitMask]
+    #print evt_data.intRoi0[-1][config.boolFitMask]
     res = lmfit.minimize(
             cookie_box.model_function,
             params,
             args=(scales.angles[config.boolFitMask],
-                evtData.intRoi0[-1][config.boolFitMask]),
+                data[dIntRoi0][config.boolFitMask]),
             method='leastsq')
 
     #print params['A'].value, params['linear'].value, params['tilt'].value
@@ -321,219 +387,192 @@ def appendEventData(evt, evtData, cb, lcls, config, scales, detCalib):
     #lmfit.report_fit(params)
 
     # Store the values
-    evtData.pol.append(np.array( [
-        params['A'].value, params['A'].stderr,
-        params['beta'].value, params['beta'].stderr,
-        params['tilt'].value, params['tilt'].stderr,
-        params['linear'].value, params['linear'].stderr
-        ]))
+    data[dPol] = np.array([params['A'].value, params['A'].stderr,
+                           params['beta'].value, params['beta'].stderr,
+                           params['tilt'].value, params['tilt'].stderr,
+                           params['linear'].value, params['linear'].stderr])
     
+    # Get the energy traces
+    data[d_energy_trace] = np.mean([trace for trace, test in
+        zip(cb.get_energy_amplitudes(), config.energy_spectrum_mask)
+        if test], axis=0)
+
     # Get the photon energy center and width
     if args.photonEnergy != 'no':
-        evtData.energy.append(
-                cb.getPhotonEnergy(
-                    energyShift=args.energyShift
-                    )
-                )
+        data[dEnergy] = cb.getPhotonEnergy(energyShift=args.energyShift)
 
     # Get lcls parameters
-    evtData.ebEnergyL3.append(lcls.getEBeamEnergyL3_MeV())
-    evtData.gasDet.append( np.array(lcls.getPulseEnergy_mJ()) )
+    data[dEL3] = lcls.getEBeamEnergyL3_MeV()
+    data[dFEE] = lcls.getPulseEnergy_mJ()
                         
     # timing information
-    evtData.fiducials.append( lcls.getEventFiducial())
-    evtData.times.append( lcls.getEventTime())
+    data[dFiducials] = lcls.getEventFiducial()
+    data[dTime] = lcls.getEventTime()
 
-def appendEpicsData(epics, evtData):
-    evtData.deltaK.append(epics.value('USEG:UND1:3350:KACT'))
-    evtData.deltaEnc.append( np.array(
-        [epics.value('USEG:UND1:3350:{}:ENC'.format(i)) for i in range(1,5)]))
- 
-def masterEventData(evtData, cb, masterLoop, verbose=False):
-    # Grab the y data
-    try:
-        evtData.energyAmplitude = cb.get_energy_amplitudes()[7]
-        evtData.energyAmplitudeRoi0 = cb.get_energy_amplitudes(roi=0)[7]
-        #evtData.energyAmplitude = np.average(cb.get_energy_amplitudes(),
-        #    axis=0)
-        #evtData.energyAmplitudeRoi0 = np.average(
-        #    cb.get_energy_amplitudes(roi=0), axis=0)
+    data[dDeltaK] = epics.value('USEG:UND1:3350:KACT')
+    data[dDeltaEnc] = np.array(
+        [epics.value('USEG:UND1:3350:{}:ENC'.format(i)) for i in range(1,5)])
 
-
-        evtData.timeAmplitude = cb.get_time_amplitudes()
-        evtData.timeAmplitudeFiltered = cb.get_time_amplitudes_filtered()
-        evtData.timeAmplitudeRoi0 = cb.get_time_amplitudes_filtered(roi=0)
-        evtData.timeAmplitudeRoi1 = cb.get_time_amplitudes_filtered(roi=1)
-
-    except TypeError:
-        evtData.timeAmplitude = None
-        return
-
-    for trace in evtData.timeAmplitudeFiltered:
-        if trace is None:
-            return
-    evtData.time_amplitude_filtered_buffer.append(evtData.timeAmplitudeFiltered)
-
-    if verbose:
-        print 'Rank', rank, '(master) grabbed one event.'
-    # Update the event counters
-    masterLoop.nProcessed += 1
-
- 
-def packageAndSendData(evtData, req, verbose=False):
-    # Make a data packet
-    data = np.zeros(dSize, dtype=float)
-    # Inform about the sender
-    data[dRank] = rank
-    # timing information
-    data[dFiducials] = evtData.fiducials[0]
-    data[dTime] = evtData.times[0]
-    # amplitude 
-    data[dIntRoi0] = evtData.intRoi0[0]
-    data[dIntRoi1] = evtData.intRoi1[0]
-    # polarization
-    data[dPol] = evtData.pol[0]
-    # Photon energy
-    if args.photonEnergy != 'no':
-        data[dEnergy] = evtData.energy[0]
-
-    # e-beam data
-    data[dEL3] = evtData.ebEnergyL3[0]
-    #print 'rank {} with gasdets: {}'.format(rank, repr(evtData.gasDet[0]))
-    data[dFEE] = evtData.gasDet[0]
-
-    # DELTA data
-    data[dDeltaK] = evtData.deltaK[0]
-    data[dDeltaEnc] = evtData.deltaEnc[0]
-
+    return data
+  
+def send_data_to_master(data, req, buffer, verbose=False):
     # wait if there is an active send request
     if req != None:
         req.Wait()
     #copy the data to the send buffer
-    evtData.buf = data.copy()
-    if verbose:
+    buffer = data.copy()
+    if verbose and 0:
         print 'rank', rank, 'sending data'
-    req = world.Isend([evtData.buf, MPI.FLOAT], dest=0, tag=0)
+    req = world.Isend([buffer, MPI.FLOAT], dest=0, tag=0)
 
     return req
 
  
-def mergeMasterAndWorkerData(evtData, masterLoop, args):
+def merge_arrived_data(data, master_loop, args, scales, verbose=False):
+    if verbose:
+        print 'Merging master and worker data.'
+        #print 'len(buf) =', len(master_loop.buf)
+        #print 'buf[0] =', master_loop.buf[0]
     # Unpack the data
-    evtData.sender = np.array( evtData.sender + [ d[dRank] for d in
-        masterLoop.arrived ])
-    evtData.fiducials = np.array( evtData.fiducials + [ d[dFiducials] for d in
-        masterLoop.arrived ])
-    evtData.times = np.array( evtData.times +[ d[dTime] for d in
-        masterLoop.arrived ])
-    evtData.intRoi0 = np.array( evtData.intRoi0 +
-            [d[dIntRoi0] for d in masterLoop.arrived])
-    evtData.intRoi1 = np.array( evtData.intRoi1 +
-            [d[dIntRoi1] for d in masterLoop.arrived])
-    if len(evtData.intRoi1) == 1:
-        evtData.auger_buffer.append(evtData.intRoi1)
-    else:
-        evtData.auger_buffer.extend(evtData.intRoi1)
+    data.sender = np.array([d[dRank] for d in master_loop.buf])
+    data.fiducials = np.array([d[dFiducials] for d in master_loop.buf])
+    data.times = np.array([d[dTime] for d in master_loop.buf])
+    data.intRoi0 = np.array([d[dIntRoi0] for d in master_loop.buf])
+    data.intRoi1 = np.array([d[dIntRoi1] for d in master_loop.buf])
+
+    # traces
+    data.timeSignals_V = []
+    for event_data in master_loop.buf:
+        data.timeSignals_V.append([d[:len(scale)] for d, scale in
+            zip(event_data[dTraces].reshape(16, -1), scales.time_us)])
+
+    data.energy_signal = [d[d_energy_trace] for d in master_loop.buf]
 
     # Polarizatio information
-    evtData.pol = np.array( evtData.pol + [d[dPol] for d in masterLoop.arrived])
-    for pol in evtData.pol:
-        if np.isfinite(pol[6]):
-            evtData.pol_degree_buffer.append(pol[6])
-            pol[6] = np.average(evtData.pol_degree_buffer)
-        if np.isfinite(pol[4]):
-            evtData.pol_angle_buffer.append(pol[4])
-            pol[4] = np.average(evtData.pol_angle_buffer)
+    data.pol = np.array([d[dPol] for d in master_loop.buf])
+    data.pol_roi0_int = []
+    # Moving average over the polarization data
+    for i in range(len(master_loop.buf)):
+        if np.isfinite(data.pol[i, 6]):
+            data.pol_degree_buffer.append(data.pol[i, 6])
+            data.pol[i, 6] = np.average(data.pol_degree_buffer)
+
+        if np.isfinite(data.pol[i, 4]):
+            data.pol_angle_buffer.append(data.pol[i, 4])
+            data.pol[i, 4] = np.average(data.pol_angle_buffer)
+
+        amp = data.intRoi0[i].sum()
+        if np.isfinite(amp):
+            data.pol_roi0_buffer.append(amp)
+            data.pol_roi0_int.append(np.average(data.pol_roi0_buffer))
+        else:
+            data.pol_roi0_int.appens(np.nan)
+
 
 
     if args.photonEnergy != 'no':
-        evtData.energy = np.array( evtData.energy + [d[dEnergy] for d in
-            masterLoop.arrived] )
+        data.energy = np.array([d[dEnergy] for d in master_loop.buf])
     if args.calibrate > -1:
-        masterLoop.calibValues.append(evtData.intRoi0 if args.calibrate==0 else
-                evtData.intRoi1)
+        master_loop.calibValues.append(data.intRoi0 if args.calibrate==0 else
+                                       data.intRoi1)
 
-    evtData.ebEnergyL3 = np.array( evtData.ebEnergyL3 + [ d[dEL3] for d in
-        masterLoop.arrived ])
-    evtData.gasDet = np.array( evtData.gasDet + [ d[dFEE] for d in
-        masterLoop.arrived ])
+    data.ebEnergyL3 = np.array([d[dEL3] for d in master_loop.buf])
+    data.gasDet = np.array([d[dFEE] for d in master_loop.buf])
 
-    evtData.deltaK = np.array( evtData.deltaK + [ d[dDeltaK] for d in
-        masterLoop.arrived ])
-    evtData.deltaEnc = np.array( evtData.deltaEnc + [ d[dDeltaEnc] for d in
-        masterLoop.arrived ])
+    data.deltaK = np.array([d[dDeltaK] for d in master_loop.buf])
+    data.deltaEnc = np.array([d[dDeltaEnc] for d in master_loop.buf])
 
-    # delete the recived data buffers
-    for i in range(masterLoop.nArrived):
-        masterLoop.buf.popleft()
-        masterLoop.req.popleft()
+    # Fill the buffers
+    for i in range( len( data.gasDet ) ):
+        if data.gasDet[i].mean() > args.feeTh:
+            data.time_trace_buffer.append(data.timeSignals_V[i])
+            data.roi_0_buffer.append(data.intRoi0[i])
+            data.roi_1_buffer.append(data.intRoi1[i])
+            data.energy_trace_buffer.append(data.energy_signal[i])
+
+    # and compute averages
+    if len(data.time_trace_buffer) > 0:
+        data.traceAverage = np.mean(data.time_trace_buffer, axis=0)
+        data.roi_0_average = np.mean(data.roi_0_buffer, axis=0)
+        data.energy_trace_average = np.mean(data.energy_trace_buffer, axis=0)
+        data.roi_1_average = np.mean(data.roi_1_buffer, axis=0)
+    else:
+        data.traceAverage = None
+        data.roi_0_average = None
+        data.energy_trace_aveage = None
+        data.roi_1_average = None
             
-def sendPVs(evtData, scales,  pvHandler, args):
-    pvData = {}
+def sendPVs(data, scales,  pvHandler, args):
+    pv_data = {}
     # Polarization data
     # Should contain degree of circular polarization
-    pvData['polarization'] = np.array( [
-        evtData.fiducials,
-        evtData.pol[:,6],
-        evtData.pol[:,7],
-        evtData.pol[:,4],
-        evtData.pol[:,5]] ).T.reshape(-1)
+    pv_data['polarization'] = np.array( [
+        data.fiducials,
+        data.pol[:,6],
+        data.pol[:,7],
+        data.pol[:,4],
+        data.pol[:,5]] ).T.reshape(-1)
     # Intensity information in the detectors
-    pvData['intensities'] =  np.concatenate(
-        [evtData.fiducials.reshape(-1,1), evtData.intRoi0],
+    pv_data['intensities'] =  np.concatenate(
+        [data.fiducials.reshape(-1,1), data.intRoi0],
         axis=1).reshape(-1)
     # Photon energy information
     if args.photonEnergy != 'no':
-        pvData['energy'] = np.concatenate(
-                [evtData.fiducials.reshape(-1,1), evtData.energy],
+        pv_data['energy'] = np.concatenate(
+                [data.fiducials.reshape(-1,1), data.energy],
                 axis=1).reshape(-1)
-        pvData['spectrum'] = np.concatenate(
+        pv_data['spectrum'] = np.concatenate(
                 [np.array([scales.energyRoi0_eV[0] + args.energyShift,
                     scales.energyRoi0_eV[1] - scales.energyRoi0_eV[0]]),
-                    evtData.energyAmplitudeRoi0])
+                    data.energyAmplitudeRoi0])
 
-    pvData['ebeam'] = np.array( [evtData.fiducials, evtData.ebEnergyL3]
+    pv_data['ebeam'] = np.array( [data.fiducials, data.ebEnergyL3]
             ).T.flatten() 
     
     # Send the data
-    pvHandler.assignData(verbose=False, **pvData)
-    pvHandler.flushData()
+    pvHandler.assign_data(verbose=False, **pv_data)
+    pvHandler.flush_data()
 
     return
 
-def zmqPlotting(evtData, scales, zmq):
+def zmqPlotting(data, scales, zmq):
  
-    plotData = {}
-    plotData['polar'] = {
-            'roi0':evtData.intRoi0[-1,:],
-            'roi1': np.average(evtData.auger_buffer, axis=0),
-            'A':evtData.pol[-1][0],
-            'beta':evtData.pol[-1][2],
-            'tilt':evtData.pol[-1][4],
-            'linear':evtData.pol[-1][6]}
-    plotData['strip'] = [evtData.fiducials, evtData.pol]
-    plotData['traces'] = {}
-    if evtData.timeAmplitude != None:
-        plotData['traces']['timeScale'] = scales.time_us
-        plotData['traces']['timeRaw'] = evtData.timeAmplitude
-        plotData['traces']['timeFiltered'] = np.mean(
-            evtData.time_amplitude_filtered_buffer, axis=0)
-        plotData['traces']['timeScaleRoi0'] = scales.timeRoi0_us
-        plotData['traces']['timeRoi0'] = evtData.timeAmplitudeRoi0
-        plotData['traces']['timeScaleRoi1'] = scales.timeRoi1_us
-        plotData['traces']['timeRoi1'] = evtData.timeAmplitudeRoi1
+    plot_data = {}
+    plot_data['polar'] = {
+            'roi0':data.roi_0_average,
+            'roi1': data.roi_1_average,
+            'A':data.pol[-1][0],
+            'beta':data.pol[-1][2],
+            'tilt':data.pol[-1][4],
+            'linear':data.pol[-1][6]}
+    plot_data['strip'] = [data.fiducials,
+                          data.pol,
+                          data.pol_roi0_int]
+    plot_data['traces'] = {}
+    if data.traceAverage != None:
+        plot_data['traces']['timeScale'] = scales.time_us
+        plot_data['traces']['timeRaw'] = data.timeSignals_V[-1]
+        plot_data['traces']['timeFiltered'] = data.traceAverage
+        plot_data['traces']['timeScaleRoi0'] = scales.timeRoi0_us
+        plot_data['traces']['timeRoi0'] = [trace[slice] for trace, slice in
+                                           zip(data.traceAverage,
+                                               scales.timeRoi0_slice)]
+        plot_data['traces']['timeScaleRoi1'] = scales.timeRoi1_us
+        plot_data['traces']['timeRoi1'] = [trace[slice] for trace, slice in
+                                           zip(data.traceAverage,
+                                               scales.timeRoi1_slice)]
     if args.photonEnergy != 'no':
-        plotData['energy'] = np.concatenate(
-                [evtData.fiducials.reshape(-1,1), evtData.energy],
+        plot_data['energy'] = np.concatenate(
+                [data.fiducials.reshape(-1,1), data.energy],
                 axis=1).reshape(-1)
-    plotData['spectrum'] = {}
-    plotData['spectrum']['energyScale'] = scales.energy_eV
-    plotData['spectrum']['energyScaleRoi0'] = scales.energyRoi0_eV
-    plotData['spectrum']['energyAmplitude'] = evtData.energyAmplitude
-    plotData['spectrum']['energyAmplitudeRoi0'] = \
-            evtData.energyAmplitudeRoi0
+    plot_data['spectrum'] = {}
+    plot_data['spectrum']['energyScale'] = scales.energy_eV
+    plot_data['spectrum']['energyScaleRoi0'] = scales.energyRoi0_eV
+    plot_data['spectrum']['energyAmplitude'] = data.energy_trace_average
+    plot_data['spectrum']['energyAmplitudeRoi0'] = \
+            data.energy_trace_average[scales.energyRoi0_slice]
             
-    zmq.sendObject(plotData)
+    zmq.sendObject(plot_data)
                 
 
 def openSaveFile(format, online=False, config=None):
@@ -547,7 +586,7 @@ def openSaveFile(format, online=False, config=None):
         if config is None:
             fileName += 'outfile{}.' + format
         else:
-            fileName += 'run' + config.offlineSource.split('=')[-1] + '_{}.' + format
+            fileName += 'run' + config.offline_source.split('=')[-1] + '_{}.' + format
         while os.path.exists(fileName.format(fileCount)):
             fileCount += 1
         fileName = fileName.format(fileCount)
@@ -570,7 +609,7 @@ def openSaveFile(format, online=False, config=None):
         file.flush()
         return file
 
-def writeDataToFile(file, data, format):
+def write_dataToFile(file, data, format):
     if format == 'txt':
         for i in range(len(data.sender)):
             line = ( repr( data.times[i] ) + '\t' +
@@ -605,6 +644,13 @@ def main(args, verbose=False):
         # Import the configuration file
         config = importConfiguration(args, verbose=verbose)
     
+        # Make a cookie box object
+        cb = cookie_box.CookieBox(config, verbose=False if rank==1 else False)
+        cb.proj.setFitMask(config.boolFitMask)
+        if args.bgAverage != 1:
+            cb.set_baseline_subtraction_averaging(args.bgAverage)
+
+
         # Read the detector transmission calibrations
         detCalib = getDetectorCalibration(verbose=verbose,
                 fileName=args.gainCalib)
@@ -613,7 +659,34 @@ def main(args, verbose=False):
         config.nanFitMask = config.nanFitMask.astype(float)
         config.nanFitMask[np.isnan(detCalib.factors)] = np.nan
         config.boolFitMask[np.isnan(detCalib.factors)] = False
-            
+
+        # Connect to the correct datasource
+        ds = connect_to_data_source(args, config, verbose=False)
+        if not args.offline:
+            # For online use just get the events iterator
+            events = ds.events()
+        else:
+            # For offline use the indexing capabilities are used to enable
+            # event skipping and real multi core advantage
+            run = ds.runs().next()
+            times = run.times()
+            event_counter = args.skip + rank
+
+        # Get the epics store
+        epics = ds.env().epicsStore()
+
+        # Get the next event. The purpouse here is only to make sure the
+        # datasource is initialized enough so that the env object is avaliable.
+        if not args.offline:
+            evt = events.next()
+        else:
+            evt = run.event(times[event_counter])
+            event_counter += 1
+           
+        # Get the scales that we need
+        cb.setup_scales(config.energy_scale_eV, ds.env())
+        scales = get_scales(ds.env(), cb)
+
         # The master have some extra things to do
         if rank == 0:
             # Set up the plotting in AMO
@@ -625,139 +698,110 @@ def main(args, verbose=False):
                 import pv_handler
                 pvHandler = pv_handler.PvHandler(timeout=1.0)
     
-            masterLoop = masterLoopSetup(args) 
+            master_loop = master_loop_setup(args) 
 
-            if args.saveData != 'no':
-                saveFile = openSaveFile(args.saveData, not args.offline, config)
+            master_data = master_data_setup(args)
+
+            if args.save_data != 'no':
+                saveFile = openSaveFile(args.save_data, not args.offline, config)
             
         else:
-            # set an empty request
+            # set an empty request for the mpi send to master
             req = None
+            # and the corresponding buffer
+            buffer = np.empty(dSize, dtype=float)
     
-    
-    
-        # Connect to the correct datasource
-        ds = connectToDataSource(args, config, verbose=verbose)
-        events = ds.events()
-    
-        # Get the next event. The purpouse here is only to make sure the
-        # datasource is initialized enough so that the env object is avaliable.
-        evt = events.next()
-    
-        # Make the cookie box object
-        cb = cookie_box.CookieBox(config, verbose=False)
-        cb.proj.setFitMask(config.boolFitMask)
-        if args.bgAverage != 1:
-            cb.set_baseline_subtraction_averaging(args.bgAverage)
-
-        # Make the lcls object
-        lcls = lclsData.LCLSdata(config.lclsConfig, quiet=False)
-    
-        # Set up the scales
-        cb.setup_scales(config.energyScaleBinLimits, env=ds.env())
-    
-        # Get the scales that we need
-        scales = getScales(cb, config)
-
-        # Get the epics store
-        epics = ds.env().epicsStore()
-
-        eventData = None
+        event_data = None
     
         # The main loop that never ends...
         while 1:
             # An event data container
-            eventData = eventDataContainer(args, event=eventData)
+            event_data = event_data_container(args, event=event_data)
                 
-            # The master should set up the recive requests
+            # The master should receive data in a timed loop
             if rank == 0:
-                masterDataSetup(eventData, args)
-                setupRecives(masterLoop, verbose=verbose)
-               
-            # The master should do something usefull while waiting for the time
-            # to pass
-            while (time.time() < masterLoop.tStop) if rank==0 else 1 :
-        
-                # If offline
-                if  args.offline:
-                    # wait for a while
-                     time.sleep(0.1)
+                # Empty the buffer list
+                master_loop.buf = []
+                # and enter the timed loop
+                if verbose:
+                    print 'Master enters the timed loop.',
+                    print 't_stop - time.time() = {} s.'.format(master_loop.tStop -
+                                                          time.time())
+                while time.time() < master_loop.tStop:
+                    # Append a buffer
+                    #if verbose:
+                    #    print 'Master appending a new buffer.'
+                    master_loop.buf.append(master_loop.buf_template.copy())
+                    # Make a blockign receive from anyone
+                    #if verbose:
+                    #    print 'Master waits for data.'
+                    world.Recv([master_loop.buf[-1], MPI.FLOAT],
+                               source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG)
+                    #if verbose:
+                    #    print 'Master got data.'
+
+                # On loop exit increment the stop time
+                master_loop.tStop += master_loop.tPlot
+
+                # Check how many events arrived
+                master_loop.nArrived = len(master_loop.buf)
+                if verbose:
+                    print 'Master received {} events'.format(
+                            master_loop.nArrived)
+                if master_loop.nArrived == 0:
+                    continue
+
+                merge_arrived_data(master_data, master_loop, args,
+                        scales, verbose=False)
     
+                # Send data as PVs
+                if args.sendPV:
+                    sendPVs(master_data, scales, pvHandler, args)
     
+                # Send data for plotting
+                zmqPlotting(master_data, scales, zmq)
+
+                if args.save_data != 'no':
+                    write_dataToFile(saveFile, master_data, args.save_data)
+                   
+            else:
+                # The workers
                 # Get the next event
-                evt = events.next()
-    
+                if not args.offline:
+                    evt = events.next()
+                else:
+                    evt = run.event(times[event_counter])
+                    event_counter += workers
+
                 # Pass the event to the processing
                 cb.set_raw_data(evt, newDataFactor=args.floatingAverage)
                 lcls.setEvent(evt)
     
                 # Randomize the amplitudes if this is requested 
                 if args.randomize:
-                    cb.randomizeAmplitudes()
+                    cb.randomize_amplitudes()
     
-                appendEventData(evt, eventData, cb, lcls, config, scales,
-                        detCalib)
-
-                appendEpicsData(epics, eventData)
-
-                # rank 0 grabs some trace data
-                if rank == 0:
-                    masterEventData(eventData, cb, masterLoop,
-                                    verbose=False)
-                
-                   # Everyone but the master goes out of the loop here
-                if rank > 0:
-                    break
-            
-            
-            # Rank 0 stuff on timed loop exit
-            if rank == 0:
-                # Shift the stop time
-                masterLoop.tStop += masterLoop.tPlot
-        
-                # Check how many arrived
-                masterLoop.nArrived = \
-                        [r.Get_status() for r in masterLoop.req].count(True)
-                if verbose:
-                    print 'master recived data from', masterLoop.nArrived, \
-                            'events'
-                    print 'with its own events it makes up', \
-                            masterLoop.nArrived + masterLoop.nProcessed
-                if masterLoop.nArrived == 0 and masterLoop.nProcessed==0:
+                # Get the data for the event
+                data = get_event_data(config, scales, detCalib,
+                        cb, args, epics, verbose=False)
+                if data is None:
+                    if verbose:
+                        print 'Rank {} got empty event.'.format(rank)
                     continue
-        
-                # A temp buffer for the arrived data
-                masterLoop.arrived = [b.reshape(-1) for i,b in
-                        enumerate(masterLoop.buf) if i < masterLoop.nArrived]
-        
-                mergeMasterAndWorkerData(eventData, masterLoop, args)
-                    
-                # Send data as PVs
-                if args.sendPV:
-                    sendPVs(eventData, scales, pvHandler, args)
-    
-    
-                # Send data for plotting
-                zmqPlotting(eventData, scales, zmq)
-
-                if args.saveData != 'no':
-                    writeDataToFile(saveFile, eventData, args.saveData)
-                   
-    
-            else:
-                # The rest of the ranks come here after breaking out of the loop
-                # the goal is to send data to the master core.
-                req = packageAndSendData(eventData, req)
+                
+                # Send the data to master
+                req = send_data_to_master(data, req, buffer,
+                                          verbose=verbose)
 
 
     except KeyboardInterrupt:
         print "Terminating program."
 
         if rank == 0 and args.calibrate > -1:
-            if args.saveData != 'no':
+            if args.save_data != 'no':
                 closeSaveFile(saveFile)
 
-            saveDetectorCalibration(masterLoop, detCalib, config,
+            saveDetectorCalibration(master_loop, detCalib, config,
                     verbose=verbose, beta = args.calibBeta)
            
 

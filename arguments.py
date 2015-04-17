@@ -146,6 +146,7 @@ def parse():
             '--polAverage',
             type=int,
             metavar='numShots',
+            default=1,
             help=('Averaging for the polarization parameters.' +
                   ' Default = 1.'))
 

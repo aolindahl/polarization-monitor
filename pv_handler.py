@@ -48,7 +48,7 @@ class PvHandler:
             pv.disconnect()
 
 
-    def assignData(self, intensities=None, spectrum=None, energy=None,
+    def assign_data(self, intensities=None, spectrum=None, energy=None,
             polarization=None, ebeam=None, verbose=False):
         input = {'intensities': intensities,
                 'spectrum' : spectrum,
@@ -80,7 +80,7 @@ class PvHandler:
                             self._pvNames[k])
                     raise
 
-    def flushData(self):
+    def flush_data(self):
         pyca.flush_io()
 
 

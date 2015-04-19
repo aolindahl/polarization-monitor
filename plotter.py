@@ -64,7 +64,7 @@ def mainPlotter(args, verbose=False):
         if verbose: 
             print 'Data contains:'
             for k, v in data.iteritems():
-                print '\t{} of type {}'.format(k, type(v)),
+                print '\n\t{} of type {}'.format(k, type(v)),
                 if isinstance(v, dict):
                     print 'with components:'
                     for k2, v2 in v.iteritems():
@@ -82,6 +82,9 @@ def mainPlotter(args, verbose=False):
 
                         elif isinstance(v2, np.ndarray):
                             print 'of shape {}.'.format(v2.shape)
+                        
+                        else:
+                            print ''
                 else:
                     print ''
 
@@ -115,7 +118,10 @@ def mainPlotter(args, verbose=False):
             params = cookie_box.initial_params()
             for k in params:
                 params[k].value = d[k]
-            params['A'].value /= d['roi0'][ np.isfinite(d['roi0']) ].max()
+            try:
+                params['A'].value /= d['roi0'][ np.isfinite(d['roi0']) ].max()
+            except:
+                params['A'].value = 0
             
             lines[2].set_ydata(cookie_box.model_function(params, angle))
             

@@ -108,7 +108,7 @@ def parse():
             '--feeTh',
             type=float,
             metavar = 'mJ',
-            default = -1.0,
+            default = None,
             help='FEE threshold for averaging. Default: no threshold.')
 
     parser.add_argument(

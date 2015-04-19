@@ -448,11 +448,36 @@ def merge_arrived_data(data, master_loop, args, scales, verbose=False):
 
     data.energy_signal = [d[d_energy_trace] for d in master_loop.buf]
 
+    if args.photonEnergy != 'no':
+        data.energy = np.array([d[dEnergy] for d in master_loop.buf])
+    if args.calibrate > -1:
+        master_loop.calibValues.append(data.intRoi0 if args.calibrate==0 else
+                                       data.intRoi1)
+
+    data.ebEnergyL3 = np.array([d[dEL3] for d in master_loop.buf])
+    data.gasDet = np.array([d[dFEE] for d in master_loop.buf])
+
+    data.deltaK = np.array([d[dDeltaK] for d in master_loop.buf])
+    data.deltaEnc = np.array([d[dDeltaEnc] for d in master_loop.buf])
+
+    # FEE energy thresholding
+    if args.feeTh is None:
+        fee_accepted = range(len(master_loop.buf))
+    else:
+        fee_accepted = [i for i, fee in enumerate(data.gasDet)
+                        if fee > args.feeTh]
+
     # Polarizatio information
     data.pol = np.array([d[dPol] for d in master_loop.buf])
     data.pol_roi0_int = []
     # Moving average over the polarization data
     for i in range(len(master_loop.buf)):
+        if i not in fee_accepted:
+            data.pol[i, 6] = np.nan
+            data.pol[i, 4] = np.nan
+            data.pol_roi0_int.append(np.nan)
+            continue
+
         if np.isfinite(data.pol[i, 6]):
             data.pol_degree_buffer.append(data.pol[i, 6])
             data.pol[i, 6] = np.average(data.pol_degree_buffer)
@@ -470,20 +495,8 @@ def merge_arrived_data(data, master_loop, args, scales, verbose=False):
 
 
 
-    if args.photonEnergy != 'no':
-        data.energy = np.array([d[dEnergy] for d in master_loop.buf])
-    if args.calibrate > -1:
-        master_loop.calibValues.append(data.intRoi0 if args.calibrate==0 else
-                                       data.intRoi1)
-
-    data.ebEnergyL3 = np.array([d[dEL3] for d in master_loop.buf])
-    data.gasDet = np.array([d[dFEE] for d in master_loop.buf])
-
-    data.deltaK = np.array([d[dDeltaK] for d in master_loop.buf])
-    data.deltaEnc = np.array([d[dDeltaEnc] for d in master_loop.buf])
-
     # Fill the buffers
-    for i in range( len( data.gasDet ) ):
+    for i in fee_accepted:
         if data.gasDet[i].mean() > args.feeTh:
             data.time_trace_buffer.append(data.timeSignals_V[i])
             data.roi_0_buffer.append(data.intRoi0[i])
@@ -545,6 +558,8 @@ def zmqPlotting(data, scales, zmq):
             'beta':data.pol[-1][2],
             'tilt':data.pol[-1][4],
             'linear':data.pol[-1][6]}
+
+
     plot_data['strip'] = [data.fiducials,
                           data.pol,
                           data.pol_roi0_int]
@@ -565,12 +580,21 @@ def zmqPlotting(data, scales, zmq):
         plot_data['energy'] = np.concatenate(
                 [data.fiducials.reshape(-1,1), data.energy],
                 axis=1).reshape(-1)
-    plot_data['spectrum'] = {}
-    plot_data['spectrum']['energyScale'] = scales.energy_eV
-    plot_data['spectrum']['energyScaleRoi0'] = scales.energyRoi0_eV
-    plot_data['spectrum']['energyAmplitude'] = data.energy_trace_average
-    plot_data['spectrum']['energyAmplitudeRoi0'] = \
+    try:
+        plot_data['spectrum'] = {}
+        plot_data['spectrum']['energyScale'] = scales.energy_eV
+        plot_data['spectrum']['energyScaleRoi0'] = scales.energyRoi0_eV
+        plot_data['spectrum']['energyAmplitude'] = data.energy_trace_average
+        plot_data['spectrum']['energyAmplitudeRoi0'] = \
             data.energy_trace_average[scales.energyRoi0_slice]
+    except:
+        plot_data['spectrum'] = {}
+        plot_data['spectrum']['energyScale'] = [0]
+        plot_data['spectrum']['energyScaleRoi0'] = [0]
+        plot_data['spectrum']['energyAmplitude'] = [0]
+        plot_data['spectrum']['energyAmplitudeRoi0'] = [0]
+
+    #print plot_data
             
     zmq.sendObject(plot_data)
                 

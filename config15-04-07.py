@@ -29,22 +29,22 @@ retardationPV = 'AMO:R14:IOC:10:VHS0:CH0:VoltageMeasure'
 
 # Acqiris channel asignment
 acqiris_setup = {
-        4:['ACQ1', 6],
-        3:['ACQ4', 0],
-        2:['ACQ4', 1],
-        1:['ACQ4', 2],
-        0:['ACQ4', 3],
-        15:['ACQ4', 4],
-        14:['ACQ4', 5],
-        13:['ACQ4', 6],
-        12:['ACQ4', 7],
-        11:['ACQ1', 0],
-        10:['ACQ1', 1],
-        9:['ACQ1', 2],
-        8:['ACQ2', 0],
-        7:['ACQ1', 3],
-        6:['ACQ2', 1],
+        0:['ACQ1', 0],
+        1:['ACQ1', 1],
+        2:['ACQ1', 2],
+        3:['ACQ1', 3],
+        4:['ACQ1', 4],
         5:['ACQ1', 5],
+        6:['ACQ1', 6],
+        7:['ACQ1', 7],
+        8:['ACQ1', 8],
+        9:['ACQ1', 9],
+        10:['ACQ1', 10],
+        11:['ACQ1', 11],
+        12:['ACQ1', 12],
+        13:['ACQ1', 13],
+        14:['ACQ1', 14],
+        15:['ACQ1', 15],
         }
 
 # ROI for the photo line

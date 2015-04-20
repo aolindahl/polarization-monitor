@@ -189,7 +189,8 @@ def parse():
             default = 0,
             type = float,
             metavar = 'BETA',
-            help = 'Beta parameter to be used for the calibration') 
+            help = 'Beta parameter to be used for the calibration.' +
+                    ' Default = 0') 
 
     parser.add_argument(
             '-s',
@@ -210,8 +211,6 @@ def parse():
 
     # Unused optinos that sort of live in the code but should not be used
     args.photonEnergy = 'no'
-    args.calibrate = -1
-    args.calibBeat = 2
     args.floatingAverage = None
 
     if args.photonEnergy != 'no':

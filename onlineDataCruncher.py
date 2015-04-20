@@ -116,7 +116,7 @@ def getDetectorCalibration(verbose=False, fileName=''):
         detCalib.fileNumber = np.nan
 
 
-    if args.calibrate is not None:
+    if args.calibrate == -1:
         detCalib.factors = np.loadtxt(detCalib.path + '/' +
                 detCalib.name.strip('.txt') +
                 '{}.txt'.format( detCalib.fileNumber if
@@ -201,7 +201,7 @@ def master_loop_setup(args):
     master_loop.tStop = time.time()
     
     # Calibration
-    if args.calibrate is not None:
+    if args.calibrate > -1:
         master_loop.calibValues = []
     
     return master_loop
@@ -450,7 +450,7 @@ def merge_arrived_data(data, master_loop, args, scales, verbose=False):
 
     if args.photonEnergy != 'no':
         data.energy = np.array([d[dEnergy] for d in master_loop.buf])
-    if args.calibrate not None:
+    if args.calibrate > -1:
         master_loop.calibValues.append(data.intRoi0 if args.calibrate==0 else
                                        data.intRoi1)
 
@@ -788,9 +788,11 @@ def main(args, verbose=False):
                 if args.save_data != 'no':
                     write_dataToFile(saveFile, master_data, args.save_data)
 
-                if args.calibrate is not None
-                saveDetectorCalibration(master_loop, detCalib, config,
-                    verbose=verbose, beta = args.calibBeta)
+                if ((args.calibrate > -1) and
+                    (len(master_loop.calibValues))):
+                        saveDetectorCalibration(master_loop, detCalib, config,
+                                                verbose=False,
+                                                beta=args.calibBeta)
                    
             else:
                 # The workers

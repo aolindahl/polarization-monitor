@@ -177,6 +177,21 @@ def parse():
     #            ' energy scale. Default = no.'))
 
     parser.add_argument(
+            '--calibrate',
+            default = -1,
+            type = int,
+            metavar='ROI',
+            help=('All data in the gven ROI will be used to make' +
+                  ' a gain calibration.'))
+
+    parser.add_argument(
+            '--calibBeta',
+            default = 0,
+            type = float,
+            metavar = 'BETA',
+            help = 'Beta parameter to be used for the calibration') 
+
+    parser.add_argument(
             '-s',
             '--save_data',
             type = str,

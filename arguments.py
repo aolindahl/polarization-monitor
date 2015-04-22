@@ -215,6 +215,11 @@ def parse():
             help=('Data source string that overrides the one set in the' +
                   ' configuration file. Only for offline use.'))
 
+    parser.add_argument(
+            '--no-plot',
+            dest='sendPlots',
+            action='store_false',
+            help=('Stop the script from sending plots.'))
 
     args = parser.parse_args()
 

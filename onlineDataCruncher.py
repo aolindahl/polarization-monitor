@@ -81,8 +81,16 @@ def connect_to_data_source(args, config, verbose=False):
 
 def importConfiguration(args, verbose=False):
     # Import the correct configuration module    
+    # Get the path and the name of the config file
     confPath, confFileName = os.path.split(args.configuration)
-    sys.path.append(confPath)
+    # Get the current working directory to be able to get back
+    working_dir = os.getcwd()
+    if len(confPath) == 0:
+        confPath = working_dir
+    # Change dir to the config directory
+    os.chdir(confPath)
+    
+    # Print someinformation
     if verbose:
         print 'Loading configuration from directory "{}"'.format(confPath)
         print 'File name is {}'.format(confFileName)
@@ -90,8 +98,19 @@ def importConfiguration(args, verbose=False):
     if verbose:
         print 'Module name is {}'.format(confName)
     
-    return importlib.import_module(confName)
-    
+    # Import the configuration moudule
+    conf = importlib.import_module(confName)
+
+    # Change back to the working directory
+    os.chdir(working_dir)
+
+    # Update the config with some parameters from the command line
+    if args.dataSource is not None:
+        conf.offline_source = args.dataSource
+
+    # Return the configuration
+    return conf
+
 
 def getDetectorCalibration(verbose=False, fileName=''):
     if fileName == '':
@@ -714,8 +733,9 @@ def main(args, verbose=False):
         # The master have some extra things to do
         if rank == 0:
             # Set up the plotting in AMO
-            from ZmqSender import zmqSender
-            zmq = zmqSender()
+            if args.sendPlots:
+                from ZmqSender import zmqSender
+                zmq = zmqSender()
     
             # Set up the PV handler
             if args.sendPV:
@@ -783,7 +803,8 @@ def main(args, verbose=False):
                     sendPVs(master_data, scales, pvHandler, args)
     
                 # Send data for plotting
-                zmqPlotting(master_data, scales, zmq)
+                if args.sendPlots:
+                    zmqPlotting(master_data, scales, zmq)
 
                 if args.save_data != 'no':
                     write_dataToFile(saveFile, master_data, args.save_data)

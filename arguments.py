@@ -207,6 +207,15 @@ def parse():
             default = 0,
             help = ('Skip events at start of run, for offline use only.'))
 
+    parser.add_argument(
+            '-d',
+            '--dataSource',
+            type=str,
+            default=None,
+            help=('Data source string that overrides the one set in the' +
+                  ' configuration file. Only for offline use.'))
+
+
     args = parser.parse_args()
 
     # Unused optinos that sort of live in the code but should not be used

@@ -13,6 +13,7 @@ import platform
 from collections import deque
 import importlib
 import lmfit
+import h5py
 
 import aolUtil
 import simplepsana
@@ -329,40 +330,12 @@ def get_event_data(config, scales, detCalib, cb, args, epics, verbose=False):
     start = dTraces.start
     for t_sig in time_amplitudes:
         if t_sig is None:
-            return req
+            return None
         #print len(t_sig)
         #print start, start+len(t_sig)
         #print data.shape, data[dTraces].shape
         data[start : start + len(t_sig)] = t_sig
         start += length
-
-
-#def masterEvent_data(evt_data, cb, master_loop, verbose=False):
-#    # Grab the y data
-#    try:
-#        evt_data.energyAmplitude = cb.get_energy_amplitudes()[7]
-#        evt_data.energyAmplitudeRoi0 = cb.get_energy_amplitudes(roi=0)[7]
-#        #evt_data.energyAmplitude = np.average(cb.get_energy_amplitudes(),
-#        #    axis=0)
-#        #evt_data.energyAmplitudeRoi0 = np.average(
-#        #    cb.get_energy_amplitudes(roi=0), axis=0)
-#        evt_data.timeAmplitude = cb.get_time_amplitudes()
-#        evt_data.timeAmplitudeFiltered = cb.get_time_amplitudes_filtered()
-#        evt_data.timeAmplitudeRoi0 = cb.get_time_amplitudes_filtered(roi=0)
-#        evt_data.timeAmplitudeRoi1 = cb.get_time_amplitudes_filtered(roi=1)
-#   except TypeError:
-#        evt_data.timeAmplitude = None
-#        return
-#    for trace in evt_data.timeAmplitudeFiltered:
-#        if trace is None:
-#            return
-#    evt_data.time_amplitude_filtered_buffer.append(evt_data.timeAmplitudeFiltered)
-#
-#    if verbose:
-#        print 'Rank', rank, '(master) grabbed one event.'
-#    # Update the event counters
-#    master_loop.nProcessed += 1
-
 
     # Get the intensities
     # Roi 0 base information (photoline)
@@ -377,7 +350,8 @@ def get_event_data(config, scales, detCalib, cb, args, epics, verbose=False):
     data[dIntRoi0] *= config.nanFitMask * detCalib.factors
 
     # Get roi 1 imformation (auger line)
-    data[dIntRoi1] = (np.sum(cb.get_time_amplitudes_filtered(roi=1), axis=1) *
+    data[dIntRoi1] = (np.array([np.sum(trace) for trace in
+                                cb.get_time_amplitudes_filtered(roi=1)]) *
                       detCalib.factors * config.nanFitMask)
         
     # Get the initial fit parameters
@@ -618,22 +592,30 @@ def zmqPlotting(data, scales, zmq):
     zmq.sendObject(plot_data)
                 
 
-def openSaveFile(format, online=False, config=None):
+def openSaveFile(format, nEvents, scales, online=False, config=None):
+    # The filename should start with the output directory
     fileName = '/reg/neh/home/alindahl/output/amoi0114/'
+
     if online is True:
+        # For online datat the rest of the file name is basically a time stamp
         t = time.localtime()
         fileName += 'online{}-{}-{}_{}-{}-{}.{}'.format(t.tm_year, t.tm_mon,
                 t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec, format)
     else:
+        # offline the file name is the run number 
         fileCount = 0
         if config is None:
             fileName += 'outfile{}.' + format
         else:
-            fileName += 'run' + config.offline_source.split('=')[-1] + '_{}.' + format
+            exp, run = [part.split('=')[-1] for part
+                        in config.offline_source.split(':')]
+            fileName += '{}_{}_'.format(exp, run) + '{}.' + format
         while os.path.exists(fileName.format(fileCount)):
             fileCount += 1
         fileName = fileName.format(fileCount)
+
     if format == 'txt':
+        # Write the header to the txt file
         file = open(fileName,'w')
 
         file.write('eventTime\tfiducial')
@@ -650,9 +632,49 @@ def openSaveFile(format, online=False, config=None):
 
         file.write('\n')
         file.flush()
-        return file
 
-def write_dataToFile(file, data, format):
+    elif format == 'h5':
+        # Initialize the hdf5 file
+        file = h5py.File(fileName, 'w')
+        # Set the event coutner to zero
+        file.attrs.create('n_events_set', 0)
+
+        file.create_dataset('rank', (nEvents,), dtype=np.int)
+        file.create_dataset('event_time', (nEvents,))
+        file.create_dataset('fiducial', (nEvents,), dtype=np.int32)
+
+        dset = file.create_dataset('L3_energy', (nEvents,))
+        dset.attrs.create('unit', 'MeV')
+
+        file.create_dataset('fee', (nEvents, 4))
+
+        file.create_dataset('auger_signals', (nEvents, 16))
+        file.create_dataset('photoline_signals', (nEvents, 16))
+
+        g = file.create_group('fit_parameters')
+        g.create_dataset('I0', (nEvents, 2))
+        g.create_dataset('beta', (nEvents, 2))
+        g.create_dataset('tilt', (nEvents, 2))
+        g.create_dataset('lin_degree', (nEvents, 2))
+
+        file.create_dataset('delta_k', (nEvents,))
+        file.create_dataset('delta_encoders', (nEvents, 4))
+
+        g_scales = file.create_group('time_scales')
+        g_amplitudes = file.create_group('time_amplitudes')
+        for i, scale in enumerate(scales.time_us):
+            dset = g_scales.create_dataset('det_{}'.format(i), data=scale)
+            dset.attrs.create('unit', 'us')
+        
+            dset = g_amplitudes.create_dataset('det_{}'.format(i), (nEvents, len(scale)))
+            dset.attrs.create('unit', 'V')
+
+
+        file.close()
+
+        return fileName
+
+def write_data_to_fileile(file, data, format):
     if format == 'txt':
         for i in range(len(data.sender)):
             line = ( repr( data.times[i] ) + '\t' +
@@ -675,6 +697,46 @@ def write_dataToFile(file, data, format):
             file.write(line)
 
         file.flush()
+
+    elif format == 'h5':
+        # Open the file
+        file = h5py.File(file, 'r+')
+        # Get the number of events already in the file
+        n_events_set = file.attrs.get('n_events_set')
+
+        data_length = len(data.times)
+        data_slice = slice(n_events_set, n_events_set + data_length)
+
+        file['rank'][data_slice] = data.sender
+        file['event_time'][data_slice] = data.times
+        file['fiducial'][data_slice] = data.fiducials
+
+        file['L3_energy'][data_slice] = data.ebEnergyL3
+
+        file['fee'][data_slice] = data.gasDet
+
+        file['auger_signals'][data_slice] = data.intRoi1
+        file['photoline_signals'][data_slice] = data.intRoi0
+
+        g = file['fit_parameters']
+        g['I0'][data_slice] = data.pol[:,0:2]
+        g['beta'][data_slice] = data.pol[:,2:4]
+        g['tilt'][data_slice] = data.pol[:,4:6]
+        g['lin_degree'][data_slice] = data.pol[:,6:8]
+
+        file['delta_k'][data_slice] = data.deltaK
+        file['delta_encoders'][data_slice] = data.deltaEnc
+
+        g = file['time_amplitudes']
+        for det in range(len(data.timeSignals_V[0])):
+            g['det_{}'.format(det)][data_slice] = [signals[det] for signals 
+                                                   in data.timeSignals_V]
+
+        # Update the file atribute
+        file.attrs.modify('n_events_set', n_events_set+data_length)
+        # Close the file
+        file.close()
+
 
 def closeSaveFile(file):
     try:
@@ -724,7 +786,6 @@ def main(args, verbose=False):
             evt = events.next()
         else:
             evt = run.event(times[event_counter])
-            event_counter += 1
            
         # Get the scales that we need
         cb.setup_scales(config.energy_scale_eV, ds.env())
@@ -747,7 +808,10 @@ def main(args, verbose=False):
             master_data = master_data_setup(args)
 
             if args.save_data != 'no':
-                saveFile = openSaveFile(args.save_data, not args.offline, config)
+                saveFile = openSaveFile(args.save_data,
+                                        len(times) if args.offline else None,
+                                        scales,
+                                        not args.offline, config)
             
         else:
             # set an empty request for the mpi send to master
@@ -807,7 +871,7 @@ def main(args, verbose=False):
                     zmqPlotting(master_data, scales, zmq)
 
                 if args.save_data != 'no':
-                    write_dataToFile(saveFile, master_data, args.save_data)
+                    write_data_to_fileile(saveFile, master_data, args.save_data)
 
                 if ((args.calibrate > -1) and
                     (len(master_loop.calibValues))):

@@ -58,3 +58,4 @@ target/
 
 # Project specific:
 detCalib/
+*.h5

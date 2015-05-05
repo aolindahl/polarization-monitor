@@ -197,7 +197,7 @@ def parse():
             '--save_data',
             type = str,
             default = 'no',
-            choices = ['no', 'txt'],
+            choices = ['no', 'txt', 'h5'],
             help = ('Output the data to a file' + 
                 ' Default = no'))
 

@@ -15,7 +15,7 @@ basicTofConfig = {
     "filterWinerResponse":1,
     "filterAverageNumPoints":4,
     "detectorSource": "DetInfo(AmoETOF.0:Acqiris.0)", 
-    "t_min_us": 0.20, 
+    "t_min_us": 0.20,    #interval to cut from raw data 
     "t_max_us": 0.26, 
     "t_slice": True
 }
@@ -29,35 +29,35 @@ retardationPV = 'AMO:R14:IOC:10:VHS0:CH0:VoltageMeasure'
 
 # Acqiris channel asignment
 acqiris_setup = {
-        0:['ACQ1', 4],
-        1:['ACQ1', 3],
-        2:['ACQ1', 2],
-        3:['ACQ1', 1],
-        4:['ACQ1', 0],
-        5:['ACQ1', 15],
-        6:['ACQ1', 14],
-        7:['ACQ1', 13],
-        8:['ACQ1', 12],
-        9:['ACQ1', 11],
-        10:['ACQ1', 10],
-        11:['ACQ1', 9],
-        12:['ACQ1', 8],
-        13:['ACQ1', 7],
-        14:['ACQ1', 6],
-        15:['ACQ1', 5],
+        0:['ACQ4', 1],
+        1:['ACQ4', 2],
+        2:['ACQ4', 3],
+        3:['ACQ4', 0],
+        4:['ACQ1', 7],
+        5:['ACQ1', 6],
+        6:['ACQ1', 5],
+        7:['ACQ1', 4],
+        8:['ACQ1', 3],
+        9:['ACQ1', 2],
+        10:['ACQ1', 1],
+        11:['ACQ1', 0],
+        12:['ACQ4', 7],
+        13:['ACQ4', 6],
+        14:['ACQ4', 5],
+        15:['ACQ4', 4],
         }
 
 # ROI for the photo line
 # red
-time_roi_0_us_common = [0.232, 0.245]
+time_roi_0_us_common = [0.24, 0.25]
 time_roi_0_us = [time_roi_0_us_common]*16
 # Background for the photoline
-time_roi_2_us_common = [0.23, 0.232]
+time_roi_2_us_common = [0.225, 0.235]
 time_roi_2_us = [time_roi_2_us_common]*16
 
 # ROI for the auger line
 # green
-time_roi_1_us_common = [0.215, 0.225]
+time_roi_1_us_common = [0.215, 0.22]
 time_roi_1_us = [time_roi_1_us_common]*16
 
 energy_roi_0_eV_common = [50, 100]
@@ -103,4 +103,4 @@ nanFitMask = np.array([1 if b else np.nan for b in boolFitMask])
 
 energy_spectrum_mask = np.array([i in [8] for i in range(16)])
 
-offline_source = 'exp=amoh5215:run=216'
+offline_source = 'exp=amom0115:run=3'

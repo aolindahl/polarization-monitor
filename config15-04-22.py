@@ -16,7 +16,7 @@ basicTofConfig = {
     "filterAverageNumPoints":4,
     "detectorSource": "DetInfo(AmoETOF.0:Acqiris.0)", 
     "t_min_us": 0.20, 
-    "t_max_us": 0.26, 
+    "t_max_us": 0.28, 
     "t_slice": True
 }
 
@@ -29,36 +29,70 @@ retardationPV = 'AMO:R14:IOC:10:VHS0:CH0:VoltageMeasure'
 
 # Acqiris channel asignment
 acqiris_setup = {
-        0:['ACQ1', 4],
-        1:['ACQ1', 3],
-        2:['ACQ1', 2],
-        3:['ACQ1', 1],
-        4:['ACQ1', 0],
-        5:['ACQ1', 15],
-        6:['ACQ1', 14],
-        7:['ACQ1', 13],
-        8:['ACQ1', 12],
-        9:['ACQ1', 11],
-        10:['ACQ1', 10],
-        11:['ACQ1', 9],
-        12:['ACQ1', 8],
-        13:['ACQ1', 7],
-        14:['ACQ1', 6],
-        15:['ACQ1', 5],
+        0:['ACQ1', 3],
+        1:['ACQ1', 2],
+        2:['ACQ1', 1],
+        3:['ACQ1', 0],
+        4:['ACQ1', 15],
+        5:['ACQ1', 14],
+        6:['ACQ1', 13],
+        7:['ACQ1', 12],
+        8:['ACQ1', 11],
+        9:['ACQ1', 10],
+        10:['ACQ1', 9],
+        11:['ACQ1', 8],
+        12:['ACQ1', 7],
+        13:['ACQ1', 6],
+        14:['ACQ1', 5],
+        15:['ACQ1', 4],
         }
 
 # ROI for the photo line
 # red
-time_roi_0_us_common = [0.232, 0.245]
-time_roi_0_us = [time_roi_0_us_common]*16
+time_roi_0_us = [[0.233, 0.241],
+                 [0.2325, 0.239],
+                 [0.2335, 0.2415],
+                 [0.2375, 0.2455],
+                 [0.2375, 0.2455],
+                 [0.2335, 0.2415],
+                 [0.2335, 0.2415],
+                 [0.233, 0.241],
+                 [0.233, 0.241],
+                 [0.233, 0.241],
+                 [0.233, 0.241],
+                 [0.233, 0.241],
+                 [0.233, 0.241],
+                 [0.233, 0.241],
+                 [0.233, 0.242],
+                 [0.2335, 0.241]]
+
 # Background for the photoline
-time_roi_2_us_common = [0.23, 0.232]
-time_roi_2_us = [time_roi_2_us_common]*16
+#time_roi_2_us_common = [0.23, 0.232]
+#time_roi_2_us = [time_roi_2_us_common]*16
+time_roi_2_us = []
+for roi0 in time_roi_0_us:
+    time_roi_2_us.append([roi0[0] - 0.0015, roi0[0]])
 
 # ROI for the auger line
 # green
-time_roi_1_us_common = [0.215, 0.225]
-time_roi_1_us = [time_roi_1_us_common]*16
+#time_roi_1_us_common = [0.215, 0.225]
+#time_roi_1_us = [time_roi_1_us_common]*16
+time_roi_1_us = [[0.225, 0.2305],
+                 [0.226, 0.2315],
+                 [0.2265, 0.233],
+                 [0.2265, 0.233],
+                 [0.225, 0.2315],
+                 [0.225, 0.2315],
+                 [0.225, 0.2315],
+                 [0.225, 0.231],
+                 [0.225, 0.2315],
+                 [0.225, 0.2315],
+                 [0.225, 0.231],
+                 [0.225, 0.231],
+                 [0.225, 0.2315],
+                 [0.225, 0.2315],
+                 [0.225, 0.2315],
+                 [0.225, 0.231]]
 
 energy_roi_0_eV_common = [50, 100]
 energy_roi_0_eV = [energy_roi_0_eV_common]*16

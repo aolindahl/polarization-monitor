@@ -27,8 +27,7 @@ h5_names = ['data/amom0115_31_0.h5']
 
 
 photo_roi = [[240, 250]]*16
-photo_roi_1 = [[237, 241]]*16
-photo_roi_2 = [[242.5, 250]]*16
+photo_roi_1 = [[240, 250]]*16
 
 auger_roi = [[215, 220]]*16
 
@@ -37,38 +36,19 @@ average_traces = {}
 time_scales = {}
 photo_roi_slices = {}
 photo_bg_slices = {}
-photo_roi_1_slices = {}
-photo_roi_2_slices = {}
-photo_bg_slices = {}
-photo_bg_1_slices = {}
-photo_bg_2_slices = {}
 auger_roi_slices = {}
 fee_mean = {}
 fee_valid = {}
 fee = {}
 auger_sum = {}
-auger_signals_average = {}
-photo_signals_average_corrected = {}
-bg_factors = {}
-photo_signals_corrected = {}
 auger_signals = {}
 auger_signals_average = {}
 auger_factors = {}
 photo_signals_average_corrected = {}
-photo_signals_1_average_corrected = {}
-photo_signals_2_average_corrected = {}
 bg_factors = {}
-bg_1_factors = {}
-bg_2_factors = {}
 photo_signals = {}
-photo_signals_1 = {}
-photo_signals_2 = {}
 photo_bg = {}
-photo_bg_1 = {}
-photo_bg_2 = {}
 photo_signals_corrected = {}
-photo_signals_1_corrected = {}
-photo_signals_2_corrected = {}
 bg_fit_coeffs = {}
 runs = []
 
@@ -82,27 +62,11 @@ for h5_name in h5_names:
     photo_roi_slices[run] = []
     auger_roi_slices[run] = []
     photo_bg_slices[run] = []
-    photo_signals_corrected[run] = []
-    bg_factors[run] = []
-    photo_roi_1_slices[run] = []
-    photo_roi_2_slices[run] = []
-    auger_roi_slices[run] = []
-    photo_bg_slices[run] = []
-    photo_bg_1_slices[run] = []
-    photo_bg_2_slices[run] = []
     photo_bg[run] = []
-    photo_bg_1[run] = []
-    photo_bg_2[run] = []
     photo_signals[run] = []
-    photo_signals_1[run] = []
-    photo_signals_2[run] = []
     photo_signals_corrected[run] = []
-    photo_signals_1_corrected[run] = []
-    photo_signals_2_corrected[run] = []
     auger_signals[run] = []
     bg_factors[run] = []
-    bg_1_factors[run] = []
-    bg_2_factors[run] = []
     bg_fit_coeffs[run] = []
 
     # with h5py.File(h5_name, 'r+') as h5_file:
@@ -135,26 +99,8 @@ for h5_name in h5_names:
                   time_scales[run][i].searchsorted(photo_roi[i][1],
                                                    side='right')))
 
-        photo_roi_1_slices[run].append(
-            slice(time_scales[run][i].searchsorted(photo_roi_1[i][0]),
-                  time_scales[run][i].searchsorted(photo_roi_1[i][1],
-                                                   side='right')))
-
-        photo_roi_2_slices[run].append(
-            slice(time_scales[run][i].searchsorted(photo_roi_2[i][0]),
-                  time_scales[run][i].searchsorted(photo_roi_2[i][1],
-                                                   side='right')))
-
         photo_bg_slices[run].append(slice(photo_roi_slices[run][i].start - 30,
                                           photo_roi_slices[run][i].start))
-
-        photo_bg_1_slices[run].append(
-            slice(photo_roi_1_slices[run][i].start - 10,
-                  photo_roi_1_slices[run][i].start))
-
-        photo_bg_2_slices[run].append(
-            slice(photo_roi_2_slices[run][i].start - 5,
-                  photo_roi_2_slices[run][i].start))
 
         bg_fit_coeffs[run].append(np.polyfit(
             time_scales[run][i][photo_bg_slices[run][i]],
@@ -171,16 +117,6 @@ for h5_name in h5_names:
 #                               (photo_bg_slices[run][i].stop -
 #                                photo_bg_slices[run][i].start))
 
-        bg_1_factors[run].append((photo_roi_1_slices[run][i].stop -
-                                  photo_roi_1_slices[run][i].start) /
-                                 (photo_bg_1_slices[run][i].stop -
-                                  photo_bg_1_slices[run][i].start))
-
-        bg_2_factors[run].append((photo_roi_2_slices[run][i].stop -
-                                  photo_roi_2_slices[run][i].start) /
-                                 (photo_bg_2_slices[run][i].stop -
-                                  photo_bg_2_slices[run][i].start))
-
         auger_roi_slices[run].append(
             slice(time_scales[run][i].searchsorted(auger_roi[i][0]),
                   time_scales[run][i].searchsorted(auger_roi[i][1],
@@ -191,34 +127,15 @@ for h5_name in h5_names:
         photo_bg[run].append(
             traces[run][i][:, photo_bg_slices[run][i]].sum(axis=1) *
             bg_factors[run][i])
+
         photo_signals_corrected[run].append(
             photo_signals[run][i] - photo_bg[run][i])
-
-        photo_signals_1[run].append(
-            traces[run][i][:, photo_roi_1_slices[run][i]].sum(axis=1))
-        photo_bg_1[run].append(
-            traces[run][i][:, photo_bg_1_slices[run][i]].sum(axis=1) *
-            bg_1_factors[run][i])
-        photo_signals_1_corrected[run].append(
-            photo_signals_1[run][i] - photo_bg_1[run][i])
-
-        photo_signals_2[run].append(
-            traces[run][i][:, photo_roi_2_slices[run][i]].sum(axis=1))
-        photo_bg_2[run].append(
-            traces[run][i][:, photo_bg_2_slices[run][i]].sum(axis=1) *
-            bg_2_factors[run][i])
-        photo_signals_2_corrected[run].append(
-            photo_signals_2[run][i] - photo_bg_2[run][i])
 
         auger_signals[run].append(
             traces[run][i][:, auger_roi_slices[run][i]].sum(axis=1))
 
     photo_signals_average_corrected[run] = np.average(
         photo_signals_corrected[run], axis=1)
-    photo_signals_1_average_corrected[run] = np.average(
-        photo_signals_1_corrected[run], axis=1)
-    photo_signals_2_average_corrected[run] = np.average(
-        photo_signals_2_corrected[run], axis=1)
 
     auger_signals_average[run] = np.average(
         auger_signals[run], axis=1)
@@ -252,8 +169,69 @@ for h5_name in h5_names:
 #    ax.plot(fee_valid[run], photo_signals_corrected[run][det], '.')
 #    ax.plot(fee_valid[run], auger_signals[run][det], '.')
 #sig_level_fig.tight_layout()
-# %% Trace plots
+# %% Deconvolution
+deconv_fig = plt.figure('Deconvolution')
+deconv_fig.clf()
 
+
+def heaviside(x):
+    ret = np.empty_like(x)
+    ret[x >= 0] = 1.0
+#    ret[x == 0] = 0.5
+    ret[x < 0] = 0.0
+    return ret
+
+
+def response(t_axis, t, d=1, b=1./357.0):
+    funk = d * np.exp(b*(t-t_axis)) * heaviside(t_axis-t)
+    return funk
+
+
+def start_params():
+    params = lmfit.Parameters()
+    params.add('d', 0.01)
+    params.add('b', 0.05, max=0.1)
+    return params
+
+
+def fit_func(params, x, y, func=False):
+    d = params['d'].value
+    b = params['b'].value
+
+    mod = np.convolve(y, response(x, x[0], d=d, b=b))[:len(x)]
+
+    if func:
+        return mod
+
+    res = mod-y
+    I = np.zeros_like(x, dtype=bool)
+    I[(211 < x) & (x < 215)] = True
+    I[(222 < x) & (x < 235)] = True
+    I[250 < x] = True
+    return res[I]
+
+run = 31
+det = 0
+
+t_axis = time_scales[run][det]
+signal = average_traces[run][det]
+plt.plot(t_axis, signal, label='signal')
+
+d = 0.012
+
+params = start_params()
+resp = fit_func(params, t_axis, signal, func=True)
+plt.plot(t_axis, resp, label='start background')
+
+res = lmfit.minimize(fit_func, params, args=(t_axis, signal))
+lmfit.report_fit(res)
+
+resp = fit_func(params, t_axis, signal, func=True)
+plt.plot(t_axis, resp, label='background')
+plt.plot(t_axis, signal - resp, label='subtracted')
+plt.legend()
+
+# %% Trace plots
 try:
     trace_plot = plt.figure('Trace plot')
     trace_plot.clf()
@@ -268,28 +246,15 @@ for i_run, run in enumerate(runs):
         ax.plot(time_scales[run][i], average_traces[run][i],
                 '-{}'.format('byc'[i_run]),
                 label='{} {} deg'.format(run, 22.5*i))
-
+        ax.plot(time_scales[run][i][photo_roi_slices[run][i]],
+                average_traces[run][i][photo_roi_slices[run][i]], '.r')
         ax.plot(time_scales[run][i][auger_roi_slices[run][i]],
                 average_traces[run][i][auger_roi_slices[run][i]], '.g')
-
-        if run != 31:
-            ax.plot(time_scales[run][i][photo_roi_slices[run][i]],
-                    average_traces[run][i][photo_roi_slices[run][i]], '.r')
-            ax.plot(time_scales[run][i][photo_bg_slices[run][i]],
-                    average_traces[run][i][photo_bg_slices[run][i]], '.m')
-    #        ax.plot(time_scales[run][i],
-    #                np.polyval(bg_fit_coeffs[run][i], time_scales[run][i]),
-    #                'm')
-        else:
-            ax.plot(time_scales[run][i][photo_roi_1_slices[run][i]],
-                    average_traces[run][i][photo_roi_1_slices[run][i]], '.r')
-            ax.plot(time_scales[run][i][photo_bg_1_slices[run][i]],
-                    average_traces[run][i][photo_bg_1_slices[run][i]], '.m')
-
-            ax.plot(time_scales[run][i][photo_roi_2_slices[run][i]],
-                    average_traces[run][i][photo_roi_2_slices[run][i]], '.y')
-            ax.plot(time_scales[run][i][photo_bg_2_slices[run][i]],
-                    average_traces[run][i][photo_bg_2_slices[run][i]], '.c')
+        ax.plot(time_scales[run][i][photo_bg_slices[run][i]],
+                average_traces[run][i][photo_bg_slices[run][i]], '.m')
+#        ax.plot(time_scales[run][i],
+#                np.polyval(bg_fit_coeffs[run][i], time_scales[run][i]),
+#                'm')
 
         if i % 4:
             plt.setp(ax.get_yticklabels(), visible=False)
@@ -319,7 +284,6 @@ angular_plot, angular_axis_array = plt.subplots(1, 3,
                                                 subplot_kw={'polar': True},
                                                 num='Angular',
                                                 figsize=(8, 10))
-
 phi = cookie_box.phi_rad
 phi_line = np.linspace(0, 2*np.pi, 2**8)
 norm_params = cookie_box.initial_params()
@@ -374,60 +338,6 @@ for ax, run in zip(angular_axis_array, runs):
     ax.legend(loc='upper right', fontsize='x-small')
 angular_plot.tight_layout()
 #    ax.plot(phi, photo_signals_average_corrected[run] * factors, 'ro')
-
-# %% Run 31 polar
-if 31 in traces.keys():
-    run = 31
-    signal_factors = auger_factors[run]
-    fig31 = plt.figure(run)
-    fig31.clf()
-    ax = plt.subplot(131, polar=True)
-    ax.plot(phi, auger_signals_average[run], 'gx', label='auger raw')
-    ax.plot(phi, auger_signals_average[run] * signal_factors, 'gs',
-            label='auger scaled')
-    ax.legend(loc='best', fontsize='small')
-    ax.set_title('run31 augers')
-
-    params = cookie_box.initial_params()
-    params['beta'].vary = False
-    params['A'].value, params['linear'].value, params['tilt'].value = \
-        proj.solve(photo_signals_1_average_corrected[run] * signal_factors,
-                   2)
-    lmfit.minimize(cookie_box.model_function, params,
-                   args=(phi[I_fit],
-                         (photo_signals_1_average_corrected[run] *
-                         signal_factors)[I_fit]))
-    ax = plt.subplot(132, polar=True)
-    ax.plot(phi, photo_signals_1_average_corrected[run], 'rx',
-            label='photo 1 raw')
-    ax.plot(phi, photo_signals_1_average_corrected[run] * signal_factors,
-            'ro', label='photo 1 scaled')
-    ax.plot(phi_line, cookie_box.model_function(params, phi_line), 'm',
-            label='fit {:.3} lin {:.3} circ'.format(
-                params['linear'].value,
-                np.sqrt(1 - params['linear'].value**2)))
-    ax.legend(loc='best', fontsize='small')
-    ax.set_title('run31 first photoline (high energy)')
-
-    params['A'].value, params['linear'].value, params['tilt'].value = \
-        proj.solve(photo_signals_2_average_corrected[run] * signal_factors,
-                   2)
-    lmfit.minimize(cookie_box.model_function, params,
-                   args=(phi[I_fit],
-                         (photo_signals_2_average_corrected[run] *
-                         signal_factors)[I_fit]))
-    ax = plt.subplot(133, polar=True)
-    ax.plot(phi, photo_signals_2_average_corrected[run], 'yx',
-            label='photo 2 raw')
-    ax.plot(phi, photo_signals_2_average_corrected[run] * signal_factors,
-            'yo', label='photo 2 scaled')
-    ax.plot(phi_line, cookie_box.model_function(params, phi_line), 'm',
-            label='fit {:.3} lin {:.3} circ'.format(
-                params['linear'].value,
-                np.sqrt(1 - params['linear'].value**2)))
-    ax.legend(loc='best', fontsize='small')
-    ax.set_title('run31 second photoline (low energy)')
-    fig31.tight_layout()
 
 # %%
 #try:

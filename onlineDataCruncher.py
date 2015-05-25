@@ -640,7 +640,7 @@ def openSaveFile(format, nEvents, scales, online=False, config=None):
         file.attrs.create('n_events_set', 0)
 
         file.create_dataset('rank', (nEvents,), dtype=np.int)
-        file.create_dataset('event_time', (nEvents,))
+        file.create_dataset('event_time', (nEvents,), dtype=np.float64)
         file.create_dataset('fiducial', (nEvents,), dtype=np.int32)
 
         dset = file.create_dataset('L3_energy', (nEvents,))

@@ -450,7 +450,7 @@ def merge_arrived_data(data, master_loop, args, scales, verbose=False):
 
     if args.photonEnergy != 'no':
         data.energy = np.array([d[dEnergy] for d in master_loop.buf])
-    if args.calibrate not None:
+    if args.calibrate is not None:
         master_loop.calibValues.append(data.intRoi0 if args.calibrate==0 else
                                        data.intRoi1)
 

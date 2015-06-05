@@ -117,14 +117,16 @@ def getDetectorCalibration(verbose=False, fileName=''):
     if fileName == '':
         detCalib = aolUtil.struct({'path':'detCalib',
             'name':'calib'})
-        # Get the latest detector callibration values from file
-        if not os.path.exists(detCalib.path):
-            os.makedirs(detCalib.path)
-            np.savetxt(detCalib.path + '/' + detCalib.name + '0.txt', [1]*16)
+        if rank == 0:
+            # Get the latest detector callibration values from file
+            if not os.path.exists(detCalib.path):
+                os.makedirs(detCalib.path)
+                np.savetxt(detCalib.path + '/' + detCalib.name + '0.txt', [1]*16)
+        world.Barrier()
         
         detCalib.fileNumber = np.max([int(f[len(detCalib.name):-4]) for f in
             os.listdir(detCalib.path) if len(f) > len(detCalib.name) and
-            f[:len(detCalib.name)]==detCalib.name])
+            f[slice(len(detCalib.name))]==detCalib.name])
     else:
         detCalib = aolUtil.struct()
         splitPath = fileName.split('/')
@@ -153,18 +155,25 @@ def getDetectorCalibration(verbose=False, fileName=''):
 def saveDetectorCalibration(master_loop, detCalib, config, verbose=False, beta=0):
     # Concatenate the list of all calibration data
     calibValues = np.concatenate(master_loop.calibValues, axis=0)
+    print 'calibValues', calibValues
     # Check the data that is not NAN
-    I = np.isfinite(calibValues.sum(axis=1))
-    # average the finite values
-    average = calibValues[I,:].mean(axis=0)
+    #I = np.isfinite(calibValues.sum(axis=1))
+    #print 'mask', I
+    ## average the finite values
+    #average = calibValues[I,:].mean(axis=0)
+    average = np.array([np.nan if np.all(np.isnan(det)) else
+                        det[np.isfinite(det)].mean()
+                        for det in calibValues.T])
+    print 'average', average
     #factors = average[config.boolFitMask].max()/average
     params = cookie_box.initial_params()
     params['A'].value = 1
     params['beta'].value = beta
     params['tilt'].value = 0
     params['linear'].value = 1
-    factors = cookie_box.model_function(params, np.radians(np.arange(0, 360,
-        22.5))) * float(average.max()) / average
+    phi = np.linspace(0, 2*np.pi, 16, endpoint=False)
+    factors = cookie_box.model_function(params, phi) / average
+    factors /= factors[np.isfinite(factors)].max()
     factors[~config.boolFitMask] = np.nan
     
     if verbose:
@@ -458,7 +467,7 @@ def merge_arrived_data(data, master_loop, args, scales, verbose=False):
         fee_accepted = range(len(master_loop.buf))
     else:
         fee_accepted = [i for i, fee in enumerate(data.gasDet)
-                        if fee > args.feeTh]
+                if fee[2:4].mean() > args.feeTh]
 
     # Polarizatio information
     data.pol = np.array([d[dPol] for d in master_loop.buf])
@@ -484,7 +493,7 @@ def merge_arrived_data(data, master_loop, args, scales, verbose=False):
             data.pol_roi0_buffer.append(amp)
             data.pol_roi0_int.append(np.average(data.pol_roi0_buffer))
         else:
-            data.pol_roi0_int.appens(np.nan)
+            data.pol_roi0_int.append(np.nan)
 
 
 
@@ -775,7 +784,18 @@ def main(args, verbose=False):
             # event skipping and real multi core advantage
             run = ds.runs().next()
             times = run.times()
-            event_counter = args.skip + rank
+            events_in_data = len(times)
+            if args.num_events > 0:
+                events_in_data = min(events_in_data,
+                                     args.skip + args.num_events)
+            else:
+                args.num_events = events_in_data - args.skip
+            if rank == 0:
+                # Start with one to haave the same while condition
+                event_counter = 1
+            else:
+                event_counter = args.skip + rank - 1
+
 
         # Get the epics store
         epics = ds.env().epicsStore()
@@ -809,7 +829,7 @@ def main(args, verbose=False):
 
             if args.save_data != 'no':
                 saveFile = openSaveFile(args.save_data,
-                                        len(times) if args.offline else None,
+                                        args.num_events if args.offline else None,
                                         scales,
                                         not args.offline, config)
             
@@ -822,7 +842,9 @@ def main(args, verbose=False):
         event_data = None
     
         # The main loop that never ends...
-        while 1:
+        while (event_counter < events_in_data) if args.offline else 1:
+            #print 'Rank', rank, 'at new itteration with event_coutner =',
+            #print event_counter
             # An event data container
             event_data = event_data_container(args, event=event_data)
                 
@@ -835,7 +857,8 @@ def main(args, verbose=False):
                     print 'Master enters the timed loop.',
                     print 't_stop - time.time() = {} s.'.format(master_loop.tStop -
                                                           time.time())
-                while time.time() < master_loop.tStop:
+                while (time.time() < master_loop.tStop and
+                       event_counter < events_in_data):
                     # Append a buffer
                     #if verbose:
                     #    print 'Master appending a new buffer.'
@@ -845,6 +868,7 @@ def main(args, verbose=False):
                     #    print 'Master waits for data.'
                     world.Recv([master_loop.buf[-1], MPI.FLOAT],
                                source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG)
+                    event_counter += 1
                     #if verbose:
                     #    print 'Master got data.'
 
@@ -876,7 +900,7 @@ def main(args, verbose=False):
                 if ((args.calibrate > -1) and
                     (len(master_loop.calibValues))):
                         saveDetectorCalibration(master_loop, detCalib, config,
-                                                verbose=False,
+                                                verbose=verbose,
                                                 beta=args.calibBeta)
                    
             else:
@@ -922,6 +946,10 @@ if __name__ == '__main__':
     # Start here
     # parset the command line
     args = arguments.parse()
+
+    if worldSize < 2:
+        print 'Script reqires at least two MPI processes to run propperly.'
+        sys.exit(0)
     if args.verbose:
         print args
         if args.sendPV:

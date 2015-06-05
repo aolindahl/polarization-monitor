@@ -208,6 +208,13 @@ def parse():
             help = ('Skip events at start of run, for offline use only.'))
 
     parser.add_argument(
+            '--num-events',
+            type = int,
+            default = -1,
+            help = ('Number of events to process in offline analysis ' +
+                    'before exiting. NUM_EVENTS < 0 => all. Default = -1'))
+
+    parser.add_argument(
             '-d',
             '--dataSource',
             type=str,

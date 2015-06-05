@@ -305,7 +305,7 @@ def mainPlotter(args, verbose=False):
 
         f2ax.set_ylim(0, 1.1)
 
-        f2ax.legend()
+        f2ax.legend(loc='center', bbox_to_anchor=(1,1))
 
         # Polarization strip shart
         if verbose:

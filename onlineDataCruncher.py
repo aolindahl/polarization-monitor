@@ -213,6 +213,8 @@ def master_data_setup(args):
     # Buffers for the polarization averageing
     master_data.pol_degree_buffer = deque([], args.polAverage)
     master_data.pol_angle_buffer = deque([], args.polAverage)
+    master_data.pol_amp_buffer = deque([], args.polAverage)
+    master_data.pol_beta_buffer = deque([], args.polAverage)
     master_data.pol_roi0_buffer = deque([], args.polAverage)
 
     return master_data
@@ -481,12 +483,12 @@ def merge_arrived_data(data, master_loop, args, scales, verbose=False):
             continue
 
         if np.isfinite(data.pol[i, 6]):
-            data.pol_degree_buffer.append(data.pol[i, 6])
-            data.pol[i, 6] = np.average(data.pol_degree_buffer)
-
-        if np.isfinite(data.pol[i, 4]):
-            data.pol_angle_buffer.append(data.pol[i, 4])
-            data.pol[i, 4] = np.average(data.pol_angle_buffer)
+            for k, buffer in zip(range(0, 7, 2), [data.pol_amp_buffer,
+                                                  data.pol_beta_buffer,
+                                                  data.pol_angle_buffer,
+                                                  data.pol_degree_buffer]):
+                buffer.append(data.pol[i, k])
+                data.pol[i, k] = np.average(buffer)
 
         amp = data.intRoi0[i].sum()
         if np.isfinite(amp):

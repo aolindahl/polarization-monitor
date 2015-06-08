@@ -6,8 +6,16 @@ def parse():
             description =
             'Argument parser for the cookie box DELTA comissioning support')
 
+    run_controll = parser.add_argument_group('Execution controll.')
+    averaging = parser.add_argument_group('Averaging',
+        'Parameters for averaging of the data.' +
+        '\nFloating average should preferably be used on its own.' +
+        ' Otherwhise double averaging is performed.')
+    calibration = parser.add_argument_group('Gain calibration')
+    offline = parser.add_argument_group('Offline')
+    debug = parser.add_argument_group('Debug information')
 
-    parser.add_argument(
+    offline.add_argument(
             '-o',
             '--offline',
             action='store_true',
@@ -39,20 +47,20 @@ def parse():
     #        metavar = 'BETA',
     #        help = 'Beta parameter to be used for the calibration')
 
-    parser.add_argument(
+    debug.add_argument(
             '-v',
             '--verbose',
             action='store_true',
             help = 'Print stuff describing what is going on.')
 
-    parser.add_argument(
+    debug.add_argument(
             '-r',
             '--randomize',
             action='store_true',
             help = ('Randimize the amplitudes. Might me usefull' +
                 'when running dummy data.'))
 
-    parser.add_argument(
+    run_controll.add_argument(
             '-i',
             '--plotInterval',
             metavar = 'TIME',
@@ -60,7 +68,7 @@ def parse():
             default = 0.5,
             help = 'Time in seconds to wait between plots. Default = 0.5 s')
 
-    parser.add_argument(
+    run_controll.add_argument(
             '-b',
             '--beta',
             type = float,
@@ -68,7 +76,7 @@ def parse():
             help = ('Set the beta parameter used in the fitting.' +
                 'Default = 2'))
 
-    parser.add_argument(
+    run_controll.add_argument(
             '-c',
             '--configuration',
             type = str,
@@ -78,7 +86,8 @@ def parse():
                 'information for the analysis. Default = ' +
                 '"cookieBoxDefaultConfig.py"'))
 
-    parser.add_argument(
+    
+    calibration.add_argument(
             '--gainCalib',
             metavar = 'FILENAME',
             type = str,
@@ -87,31 +96,32 @@ def parse():
                     + 'By default the file with the highest number ' \
                     + 'will be used.'))
 
-    parser.add_argument(
+    run_controll.add_argument(
             '-P',
             '--sendPV',
             action = 'store_true',
             help = ('Use this flag to send data as PVs over the EPICS' +
                 ' system. Default = NO PV writing.'))
     
-    #parser.add_argument(
-    #        '-f',
-    #        '--floatingAverage',
-    #        type = float,
-    #        metavar = 'WEIGHT',
-    #        default = None,
-    #        help = ('Moving average with weight on last point.' +
-    #                ' This averaging is performed each core when' +
-    #                ' the raw data is grabbed from the evet.'))
 
-    parser.add_argument(
+    averaging.add_argument(
+            '-f',
+            '--floatingAverage',
+            type = float,
+            metavar = 'WEIGHT',
+            default = None,
+            help = ('Moving average with weight on last point.' +
+                    ' This averaging is performed each core when' +
+                    ' the raw data is grabbed from the evet.'))
+
+    averaging.add_argument(
             '--feeTh',
             type=float,
             metavar = 'mJ',
             default = None,
             help='FEE threshold for averaging. Default: no threshold.')
 
-    parser.add_argument(
+    averaging.add_argument(
             '-tA',
             '--traceAverage',
             default = 1,
@@ -121,7 +131,7 @@ def parse():
                   ' Does not effect any other calculations.' +
                   ' Number of shots to use. Default = 1.'))
 
-    parser.add_argument(
+    averaging.add_argument(
             '-0A',
             '--roi0Average',
             type = int,
@@ -131,7 +141,7 @@ def parse():
                 ' Number of shots to use.' +
                 ' Default = 1.'))
 
-    parser.add_argument(
+    averaging.add_argument(
             '-1A',
             '--roi1Average',
             type = int,
@@ -141,7 +151,7 @@ def parse():
                 ' Number of shots to use.' +
                 ' Default = 1.'))
 
-    parser.add_argument(
+    averaging.add_argument(
             '-pA',
             '--polAverage',
             type=int,
@@ -150,7 +160,7 @@ def parse():
             help=('Averaging for the polarization parameters.' +
                   ' Default = 1.'))
 
-    parser.add_argument(
+    averaging.add_argument(
             '--bgAverage',
             type = float,
             default = 1,
@@ -176,7 +186,7 @@ def parse():
     #            ' Passed value is the offset from the time of flight' +
     #            ' energy scale. Default = no.'))
 
-    parser.add_argument(
+    calibration.add_argument(
             '--calibrate',
             default = -1,
             type = int,
@@ -184,7 +194,7 @@ def parse():
             help=('All data in the gven ROI will be used to make' +
                   ' a gain calibration.'))
 
-    parser.add_argument(
+    calibration.add_argument(
             '--calibBeta',
             default = 0,
             type = float,
@@ -192,7 +202,7 @@ def parse():
             help = 'Beta parameter to be used for the calibration.' +
                     ' Default = 0') 
 
-    parser.add_argument(
+    run_controll.add_argument(
             '-s',
             '--save_data',
             type = str,
@@ -201,20 +211,20 @@ def parse():
             help = ('Output the data to a file' + 
                 ' Default = no'))
 
-    parser.add_argument(
+    offline.add_argument(
             '--skip',
             type = int,
             default = 0,
             help = ('Skip events at start of run, for offline use only.'))
 
-    parser.add_argument(
+    offline.add_argument(
             '--num-events',
             type = int,
             default = -1,
             help = ('Number of events to process in offline analysis ' +
                     'before exiting. NUM_EVENTS < 0 => all. Default = -1'))
 
-    parser.add_argument(
+    offline.add_argument(
             '-d',
             '--dataSource',
             type=str,
@@ -222,7 +232,7 @@ def parse():
             help=('Data source string that overrides the one set in the' +
                   ' configuration file. Only for offline use.'))
 
-    parser.add_argument(
+    run_controll.add_argument(
             '--no-plot',
             dest='sendPlots',
             action='store_false',
@@ -232,7 +242,7 @@ def parse():
 
     # Unused optinos that sort of live in the code but should not be used
     args.photonEnergy = 'no'
-    args.floatingAverage = None
+    #args.floatingAverage = None
 
     if args.photonEnergy != 'no':
         args.energyShift = energyShifts[args.photonEnergy]
